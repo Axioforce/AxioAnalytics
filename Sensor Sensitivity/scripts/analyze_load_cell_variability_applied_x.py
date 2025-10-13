@@ -336,6 +336,63 @@ def compute_group_stats_aligned(
     return stats, grid_x
 
 
+def _ensure_frame_aligned_column(dfs: List[pd.DataFrame]) -> None:
+    """Ensure each DataFrame has a 'frame_aligned' integer axis."""
+    for df in dfs:
+        if "frame_aligned" not in df.columns:
+            df["frame_aligned"] = np.arange(len(df), dtype=int)
+
+
+def align_sets_by_first_x_peak(
+    mounted: List[pd.DataFrame],
+    reseated: List[pd.DataFrame],
+    params: Params,
+) -> Tuple[List[pd.DataFrame], List[pd.DataFrame]]:
+    """Align reseated set to mounted set by the first local 'x' peak over threshold.
+
+    - Uses group mean over an aligned grid.
+    - Threshold uses Params.local_peak_threshold (default 1000.0).
+    - If no threshold-crossing window is found, falls back to global |x| peak.
+    """
+    if not mounted or not reseated:
+        return mounted, reseated
+
+    _ensure_frame_aligned_column(mounted)
+    _ensure_frame_aligned_column(reseated)
+
+    m_stats, m_grid = compute_group_stats_aligned(mounted, ["x"], x_col="frame_aligned")
+    r_stats, r_grid = compute_group_stats_aligned(reseated, ["x"], x_col="frame_aligned")
+    if not m_stats or not r_stats:
+        return mounted, reseated
+
+    m_series = m_stats["x"]["mean"].to_numpy()
+    r_series = r_stats["x"]["mean"].to_numpy()
+
+    m_idx = find_local_peak_window_index(m_series, params.local_peak_threshold)
+    if m_idx is None:
+        m_idx = int(np.nanargmax(np.abs(m_series))) if m_series.size else 0
+    r_idx = find_local_peak_window_index(r_series, params.local_peak_threshold)
+    if r_idx is None:
+        r_idx = int(np.nanargmax(np.abs(r_series))) if r_series.size else 0
+
+    # Map to aligned frame coordinates
+    m_frame = int(m_grid[m_idx]) if m_grid.size and 0 <= m_idx < m_grid.size else 0
+    r_frame = int(r_grid[r_idx]) if r_grid.size and 0 <= r_idx < r_grid.size else 0
+
+    delta = r_frame - m_frame
+    if delta == 0:
+        return mounted, reseated
+
+    # Shift reseated runs so the selected peak aligns with mounted's
+    out_reseated: List[pd.DataFrame] = []
+    for df in reseated:
+        out = df.copy()
+        if "frame_aligned" in out.columns:
+            out["frame_aligned"] = out["frame_aligned"].astype(int) - int(delta)
+        out_reseated.append(out)
+    return mounted, out_reseated
+
+
 def compute_metrics(dfs: List[pd.DataFrame], mean_ref, cols: List[str]) -> pd.DataFrame:
     records = []
     for df in dfs:
@@ -652,23 +709,26 @@ def main() -> None:
     mounted_rot = rotate_group_about_z(mounted_trimmed, params.rotation_deg_z)
     reseated_rot = rotate_group_about_z(reseated_trimmed, params.rotation_deg_z)
 
+    # Inter-set alignment by first local 'x' peak over threshold
+    mounted_adj, reseated_adj = align_sets_by_first_x_peak(mounted_rot, reseated_rot, params)
+
     # Plot
-    plot_overlaid(mounted_rot, reseated_rot, paths, params)
+    plot_overlaid(mounted_adj, reseated_adj, paths, params)
 
     # Metrics
     cols = ["x", "y", "z", "mag"]
     if params.alignment_method in ("peak", "local_peak"):
         # Compute metrics on aligned grid per set
-        m_stats, _ = compute_group_stats_aligned(mounted_rot, cols, x_col="frame_aligned")
-        r_stats, _ = compute_group_stats_aligned(reseated_rot, cols, x_col="frame_aligned")
+        m_stats, _ = compute_group_stats_aligned(mounted_adj, cols, x_col="frame_aligned")
+        r_stats, _ = compute_group_stats_aligned(reseated_adj, cols, x_col="frame_aligned")
         # Convert mean frames to arrays aligned to their own grid
         m_metrics = compute_metrics(mounted_rot, {k: v["mean"] for k, v in m_stats.items()}, cols)  # type: ignore
         r_metrics = compute_metrics(reseated_rot, {k: v["mean"] for k, v in r_stats.items()}, cols)  # type: ignore
     else:
-        m_stats = compute_group_stats(mounted_rot, cols)
-        r_stats = compute_group_stats(reseated_rot, cols)
-        m_metrics = compute_metrics(mounted_rot, {k: v["mean"] for k, v in m_stats.items()}, cols)  # type: ignore
-        r_metrics = compute_metrics(reseated_rot, {k: v["mean"] for k, v in r_stats.items()}, cols)  # type: ignore
+        m_stats = compute_group_stats(mounted_adj, cols)
+        r_stats = compute_group_stats(reseated_adj, cols)
+        m_metrics = compute_metrics(mounted_adj, {k: v["mean"] for k, v in m_stats.items()}, cols)  # type: ignore
+        r_metrics = compute_metrics(reseated_adj, {k: v["mean"] for k, v in r_stats.items()}, cols)  # type: ignore
 
     # Save metrics (distinct filenames to avoid overwriting default analyzer outputs)
     m_metrics.to_csv(os.path.join(paths.metrics_dir, "mounted_metrics_applied_x.csv"), index=False)
