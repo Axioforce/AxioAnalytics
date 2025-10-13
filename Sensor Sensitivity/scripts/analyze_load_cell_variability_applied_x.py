@@ -786,10 +786,6 @@ def main() -> None:
         m_metrics = compute_metrics(mounted_adj, {k: v["mean"] for k, v in m_stats.items()}, cols)  # type: ignore
         r_metrics = compute_metrics(reseated_adj, {k: v["mean"] for k, v in r_stats.items()}, cols)  # type: ignore
 
-    # Save metrics (distinct filenames to avoid overwriting default analyzer outputs)
-    m_metrics.to_csv(os.path.join(paths.metrics_dir, "mounted_metrics_applied_x.csv"), index=False)
-    r_metrics.to_csv(os.path.join(paths.metrics_dir, "reseated_metrics_applied_x.csv"), index=False)
-
     # Save compact summaries (per-set and between-set)
     mounted_summary = summarize_set(m_metrics, m_stats, cols)
     reseated_summary = summarize_set(r_metrics, r_stats, cols)
@@ -798,12 +794,10 @@ def main() -> None:
     reseated_summary.to_csv(os.path.join(paths.metrics_dir, "reseated_summary_applied_x.csv"), index=False)
     between_summary.to_csv(os.path.join(paths.metrics_dir, "between_sets_summary_applied_x.csv"), index=False)
 
-    print("Saved:")
-    print(f"- Metrics: {os.path.join(paths.metrics_dir, 'mounted_metrics_applied_x.csv')}")
-    print(f"- Metrics: {os.path.join(paths.metrics_dir, 'reseated_metrics_applied_x.csv')}")
-    print(f"- Summary: {os.path.join(paths.metrics_dir, 'mounted_summary_applied_x.csv')}")
-    print(f"- Summary: {os.path.join(paths.metrics_dir, 'reseated_summary_applied_x.csv')}")
-    print(f"- Summary: {os.path.join(paths.metrics_dir, 'between_sets_summary_applied_x.csv')}")
+    print("Saved summaries:")
+    print(f"- {os.path.join(paths.metrics_dir, 'mounted_summary_applied_x.csv')}")
+    print(f"- {os.path.join(paths.metrics_dir, 'reseated_summary_applied_x.csv')}")
+    print(f"- {os.path.join(paths.metrics_dir, 'between_sets_summary_applied_x.csv')}")
 
 
 if __name__ == "__main__":
