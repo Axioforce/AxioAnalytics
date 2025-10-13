@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import r2_score, mean_absolute_error
 from pathlib import Path
 
+# Resolve relative to the project folder (one level above this script)
 project_root = Path(__file__).resolve().parent.parent
 data_path = project_root / "Load_Cell_Spiral_test" / "H6b.90" / "10.08.2025" / "stationary_runs" / "stationary_spiral1_10.08.2025.csv"
 data = pd.read_csv(data_path)

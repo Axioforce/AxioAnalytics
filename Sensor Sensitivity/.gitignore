@@ -39,4 +39,7 @@ htmlcov/
 # Project outputs (regenerable)
 outputs/plots/
 
+# Optional: ignore all raw data; comment out to commit data
+#Load_Cell_Spiral_test/
+
 

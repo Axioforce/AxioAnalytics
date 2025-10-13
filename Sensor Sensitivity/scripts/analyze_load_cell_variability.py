@@ -9,18 +9,17 @@ from scipy.signal import butter, filtfilt
 import matplotlib.pyplot as plt
 import seaborn as sns
 from matplotlib.widgets import CheckButtons
+from pathlib import Path
 
 
 @dataclass
 class Paths:
-    mounted_glob: str = os.path.join(
-        "Load_Cell_Spiral_test", "H6b.90", "10.08.2025", "mounted_runs", "*.csv"
-    )
-    reseated_glob: str = os.path.join(
-        "Load_Cell_Spiral_test", "H6b.90", "10.08.2025", "stationary_runs", "*.csv"
-    )
-    plots_dir: str = os.path.join("outputs", "plots")
-    metrics_dir: str = os.path.join("outputs", "metrics")
+    # Resolve paths relative to the project folder (one level above this script)
+    _project_root: Path = Path(__file__).resolve().parent.parent
+    mounted_glob: str = str(_project_root / "Load_Cell_Spiral_test" / "H6b.90" / "10.08.2025" / "mounted_runs" / "*.csv")
+    reseated_glob: str = str(_project_root / "Load_Cell_Spiral_test" / "H6b.90" / "10.08.2025" / "stationary_runs" / "*.csv")
+    plots_dir: str = str(_project_root / "outputs" / "plots")
+    metrics_dir: str = str(_project_root / "outputs" / "metrics")
 
 
 @dataclass
