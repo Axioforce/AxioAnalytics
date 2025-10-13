@@ -455,6 +455,62 @@ def compute_metrics(dfs: List[pd.DataFrame], mean_ref, cols: List[str]) -> pd.Da
     return pd.DataFrame.from_records(records)
 
 
+def summarize_set(metrics_df: pd.DataFrame, stats: Dict[str, pd.DataFrame], axes: List[str]) -> pd.DataFrame:
+    rows = []
+    for axis in axes:
+        m_axis = metrics_df.loc[metrics_df["axis"] == axis]
+        rmse_mean = float(np.nanmean(m_axis["rmse"])) if not m_axis.empty else float("nan")
+        rmse_std = float(np.nanstd(m_axis["rmse"])) if not m_axis.empty else float("nan")
+        r_mean = float(np.nanmean(m_axis["pearson_r"])) if not m_axis.empty else float("nan")
+        peak_amp_mean = float(np.nanmean(m_axis["peak_amp"])) if not m_axis.empty else float("nan")
+        peak_amp_std = float(np.nanstd(m_axis["peak_amp"])) if not m_axis.empty else float("nan")
+        peak_idx_mean = float(np.nanmean(m_axis["peak_idx"])) if not m_axis.empty else float("nan")
+        peak_idx_std = float(np.nanstd(m_axis["peak_idx"])) if not m_axis.empty else float("nan")
+
+        mean_band_std = float(np.nanmean(stats[axis]["std"])) if axis in stats else float("nan")
+
+        rows.append({
+            "axis": axis,
+            "rmse_mean": rmse_mean,
+            "rmse_std": rmse_std,
+            "pearson_r_mean": r_mean,
+            "peak_amp_mean": peak_amp_mean,
+            "peak_amp_std": peak_amp_std,
+            "peak_idx_mean": peak_idx_mean,
+            "peak_idx_std": peak_idx_std,
+            "mean_std_over_time": mean_band_std,
+            "num_runs": int(len(m_axis))
+        })
+    return pd.DataFrame(rows)
+
+
+def summarize_between_sets(m_stats: Dict[str, pd.DataFrame], r_stats: Dict[str, pd.DataFrame], axes: List[str]) -> pd.DataFrame:
+    rows = []
+    for axis in axes:
+        if axis not in m_stats or axis not in r_stats:
+            rows.append({"axis": axis, "rmse_between_means": float("nan"), "pearson_r_between_means": float("nan"), "delta_peak_idx": float("nan"), "delta_peak_amp": float("nan")})
+            continue
+        a = m_stats[axis]["mean"].to_numpy()
+        b = r_stats[axis]["mean"].to_numpy()
+        n = min(len(a), len(b))
+        if n <= 0:
+            rows.append({"axis": axis, "rmse_between_means": float("nan"), "pearson_r_between_means": float("nan"), "delta_peak_idx": float("nan"), "delta_peak_amp": float("nan")})
+            continue
+        a = a[:n]
+        b = b[:n]
+        rmse_means = float(np.sqrt(np.nanmean((a - b) ** 2)))
+        r_means = float(np.corrcoef(a, b)[0, 1]) if (np.std(a) != 0 and np.std(b) != 0) else float("nan")
+        a_peak_idx = int(np.nanargmax(np.abs(a))) if np.size(a) else 0
+        b_peak_idx = int(np.nanargmax(np.abs(b))) if np.size(b) else 0
+        rows.append({
+            "axis": axis,
+            "rmse_between_means": rmse_means,
+            "pearson_r_between_means": r_means,
+            "delta_peak_idx": float(b_peak_idx - a_peak_idx),
+            "delta_peak_amp": float(b[b_peak_idx] - a[a_peak_idx]) if n > 0 else float("nan")
+        })
+    return pd.DataFrame(rows)
+
 def plot_overlaid(
     mounted: List[pd.DataFrame],
     reseated: List[pd.DataFrame],
@@ -722,8 +778,8 @@ def main() -> None:
         m_stats, _ = compute_group_stats_aligned(mounted_adj, cols, x_col="frame_aligned")
         r_stats, _ = compute_group_stats_aligned(reseated_adj, cols, x_col="frame_aligned")
         # Convert mean frames to arrays aligned to their own grid
-        m_metrics = compute_metrics(mounted_rot, {k: v["mean"] for k, v in m_stats.items()}, cols)  # type: ignore
-        r_metrics = compute_metrics(reseated_rot, {k: v["mean"] for k, v in r_stats.items()}, cols)  # type: ignore
+        m_metrics = compute_metrics(mounted_adj, {k: v["mean"] for k, v in m_stats.items()}, cols)  # type: ignore
+        r_metrics = compute_metrics(reseated_adj, {k: v["mean"] for k, v in r_stats.items()}, cols)  # type: ignore
     else:
         m_stats = compute_group_stats(mounted_adj, cols)
         r_stats = compute_group_stats(reseated_adj, cols)
@@ -734,9 +790,20 @@ def main() -> None:
     m_metrics.to_csv(os.path.join(paths.metrics_dir, "mounted_metrics.csv"), index=False)
     r_metrics.to_csv(os.path.join(paths.metrics_dir, "reseated_metrics.csv"), index=False)
 
+    # Save compact summaries (per-set and between-set)
+    mounted_summary = summarize_set(m_metrics, m_stats, cols)
+    reseated_summary = summarize_set(r_metrics, r_stats, cols)
+    between_summary = summarize_between_sets(m_stats, r_stats, cols)
+    mounted_summary.to_csv(os.path.join(paths.metrics_dir, "mounted_summary.csv"), index=False)
+    reseated_summary.to_csv(os.path.join(paths.metrics_dir, "reseated_summary.csv"), index=False)
+    between_summary.to_csv(os.path.join(paths.metrics_dir, "between_sets_summary.csv"), index=False)
+
     print("Saved:")
     print(f"- Metrics: {os.path.join(paths.metrics_dir, 'mounted_metrics.csv')}")
     print(f"- Metrics: {os.path.join(paths.metrics_dir, 'reseated_metrics.csv')}")
+    print(f"- Summary: {os.path.join(paths.metrics_dir, 'mounted_summary.csv')}")
+    print(f"- Summary: {os.path.join(paths.metrics_dir, 'reseated_summary.csv')}")
+    print(f"- Summary: {os.path.join(paths.metrics_dir, 'between_sets_summary.csv')}")
 
 
 if __name__ == "__main__":

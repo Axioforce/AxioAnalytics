@@ -10,7 +10,7 @@ run,axis,rmse,pearson_r,peak_amp,peak_idx
 9616    stationary_spiral10_10.08.2025.csv
 9617    stationary_spiral10_10.08.2025.csv
 9618    stationary_spiral10_10.08.2025.csv
-Name: source_path, Length: 9619, dtype: object",x,115.00644167991439,0.999761580098953,7811.408611767791,5517
+Name: source_path, Length: 9619, dtype: object",x,415.71321324669844,0.988606410427627,7811.408611767791,5517
 "0       stationary_spiral10_10.08.2025.csv
 1       stationary_spiral10_10.08.2025.csv
 2       stationary_spiral10_10.08.2025.csv
@@ -22,7 +22,7 @@ Name: source_path, Length: 9619, dtype: object",x,115.00644167991439,0.999761580
 9616    stationary_spiral10_10.08.2025.csv
 9617    stationary_spiral10_10.08.2025.csv
 9618    stationary_spiral10_10.08.2025.csv
-Name: source_path, Length: 9619, dtype: object",y,146.03738583807652,0.9991176197821474,-5393.103420109798,6944
+Name: source_path, Length: 9619, dtype: object",y,402.4187215381283,0.9865250852231059,-5393.103420109798,6944
 "0       stationary_spiral10_10.08.2025.csv
 1       stationary_spiral10_10.08.2025.csv
 2       stationary_spiral10_10.08.2025.csv
@@ -34,7 +34,7 @@ Name: source_path, Length: 9619, dtype: object",y,146.03738583807652,0.999117619
 9616    stationary_spiral10_10.08.2025.csv
 9617    stationary_spiral10_10.08.2025.csv
 9618    stationary_spiral10_10.08.2025.csv
-Name: source_path, Length: 9619, dtype: object",z,57.321641900476386,0.9990509516732701,-3868.0,5789
+Name: source_path, Length: 9619, dtype: object",z,143.18321338409282,0.9919860969997891,-3868.0,5789
 "0       stationary_spiral10_10.08.2025.csv
 1       stationary_spiral10_10.08.2025.csv
 2       stationary_spiral10_10.08.2025.csv
@@ -46,7 +46,7 @@ Name: source_path, Length: 9619, dtype: object",z,57.321641900476386,0.999050951
 9616    stationary_spiral10_10.08.2025.csv
 9617    stationary_spiral10_10.08.2025.csv
 9618    stationary_spiral10_10.08.2025.csv
-Name: source_path, Length: 9619, dtype: object",mag,114.29197977082286,0.9995690352940695,8657.54018182994,5789
+Name: source_path, Length: 9619, dtype: object",mag,307.88764588966023,0.9937846979061408,8657.54018182994,5789
 "0       stationary_spiral1_10.08.2025.csv
 1       stationary_spiral1_10.08.2025.csv
 2       stationary_spiral1_10.08.2025.csv
@@ -58,7 +58,7 @@ Name: source_path, Length: 9619, dtype: object",mag,114.29197977082286,0.9995690
 9852    stationary_spiral1_10.08.2025.csv
 9853    stationary_spiral1_10.08.2025.csv
 9854    stationary_spiral1_10.08.2025.csv
-Name: source_path, Length: 9855, dtype: object",x,217.84306722279285,0.9970267610512213,7608.468965567252,5852
+Name: source_path, Length: 9855, dtype: object",x,365.4926817889323,0.9908024997139107,7608.468965567252,5852
 "0       stationary_spiral1_10.08.2025.csv
 1       stationary_spiral1_10.08.2025.csv
 2       stationary_spiral1_10.08.2025.csv
@@ -70,7 +70,7 @@ Name: source_path, Length: 9855, dtype: object",x,217.84306722279285,0.997026761
 9852    stationary_spiral1_10.08.2025.csv
 9853    stationary_spiral1_10.08.2025.csv
 9854    stationary_spiral1_10.08.2025.csv
-Name: source_path, Length: 9855, dtype: object",y,324.9437878976389,0.9907919889809889,5077.026688919412,6325
+Name: source_path, Length: 9855, dtype: object",y,343.58097255069407,0.9895788348647805,5077.026688919412,6325
 "0       stationary_spiral1_10.08.2025.csv
 1       stationary_spiral1_10.08.2025.csv
 2       stationary_spiral1_10.08.2025.csv
@@ -82,7 +82,7 @@ Name: source_path, Length: 9855, dtype: object",y,324.9437878976389,0.9907919889
 9852    stationary_spiral1_10.08.2025.csv
 9853    stationary_spiral1_10.08.2025.csv
 9854    stationary_spiral1_10.08.2025.csv
-Name: source_path, Length: 9855, dtype: object",z,194.16309159715996,0.9937130898292528,-3733.0,6123
+Name: source_path, Length: 9855, dtype: object",z,229.64368389851003,0.9867709519956758,-3733.0,6123
 "0       stationary_spiral1_10.08.2025.csv
 1       stationary_spiral1_10.08.2025.csv
 2       stationary_spiral1_10.08.2025.csv
@@ -94,7 +94,7 @@ Name: source_path, Length: 9855, dtype: object",z,194.16309159715996,0.993713089
 9852    stationary_spiral1_10.08.2025.csv
 9853    stationary_spiral1_10.08.2025.csv
 9854    stationary_spiral1_10.08.2025.csv
-Name: source_path, Length: 9855, dtype: object",mag,173.1090489043497,0.9984209537454278,8468.311460970244,6124
+Name: source_path, Length: 9855, dtype: object",mag,288.4983047998237,0.9945067179574751,8468.311460970244,6124
 "0       stationary_spiral2_10.08.2025.csv
 1       stationary_spiral2_10.08.2025.csv
 2       stationary_spiral2_10.08.2025.csv
@@ -106,7 +106,7 @@ Name: source_path, Length: 9855, dtype: object",mag,173.1090489043497,0.99842095
 9515    stationary_spiral2_10.08.2025.csv
 9516    stationary_spiral2_10.08.2025.csv
 9517    stationary_spiral2_10.08.2025.csv
-Name: source_path, Length: 9518, dtype: object",x,113.24849358049532,0.999531294527456,7671.755022483448,5431
+Name: source_path, Length: 9518, dtype: object",x,349.15821745114897,0.991846358154771,7671.755022483448,5431
 "0       stationary_spiral2_10.08.2025.csv
 1       stationary_spiral2_10.08.2025.csv
 2       stationary_spiral2_10.08.2025.csv
@@ -118,7 +118,7 @@ Name: source_path, Length: 9518, dtype: object",x,113.24849358049532,0.999531294
 9515    stationary_spiral2_10.08.2025.csv
 9516    stationary_spiral2_10.08.2025.csv
 9517    stationary_spiral2_10.08.2025.csv
-Name: source_path, Length: 9518, dtype: object",y,186.23453653508648,0.9975705419284895,5405.477788780563,5906
+Name: source_path, Length: 9518, dtype: object",y,294.82638110277696,0.9928471447490805,5405.477788780563,5906
 "0       stationary_spiral2_10.08.2025.csv
 1       stationary_spiral2_10.08.2025.csv
 2       stationary_spiral2_10.08.2025.csv
@@ -130,7 +130,7 @@ Name: source_path, Length: 9518, dtype: object",y,186.23453653508648,0.997570541
 9515    stationary_spiral2_10.08.2025.csv
 9516    stationary_spiral2_10.08.2025.csv
 9517    stationary_spiral2_10.08.2025.csv
-Name: source_path, Length: 9518, dtype: object",z,109.58030399063615,0.9969846021112247,-3896.0,5706
+Name: source_path, Length: 9518, dtype: object",z,206.5958429052416,0.9840839721066348,-3896.0,5706
 "0       stationary_spiral2_10.08.2025.csv
 1       stationary_spiral2_10.08.2025.csv
 2       stationary_spiral2_10.08.2025.csv
@@ -142,7 +142,7 @@ Name: source_path, Length: 9518, dtype: object",z,109.58030399063615,0.996984602
 9515    stationary_spiral2_10.08.2025.csv
 9516    stationary_spiral2_10.08.2025.csv
 9517    stationary_spiral2_10.08.2025.csv
-Name: source_path, Length: 9518, dtype: object",mag,101.31765371147127,0.9993272064666062,8600.203965604536,5706
+Name: source_path, Length: 9518, dtype: object",mag,326.14088525598356,0.9923310021316668,8600.203965604536,5706
 "0       stationary_spiral3_10.08.2025.csv
 1       stationary_spiral3_10.08.2025.csv
 2       stationary_spiral3_10.08.2025.csv
@@ -154,7 +154,7 @@ Name: source_path, Length: 9518, dtype: object",mag,101.31765371147127,0.9993272
 9791    stationary_spiral3_10.08.2025.csv
 9792    stationary_spiral3_10.08.2025.csv
 9793    stationary_spiral3_10.08.2025.csv
-Name: source_path, Length: 9794, dtype: object",x,111.57296227419499,0.9998791519447078,7753.425855710494,5883
+Name: source_path, Length: 9794, dtype: object",x,378.50493475951123,0.9905734926588264,7753.425855710494,5883
 "0       stationary_spiral3_10.08.2025.csv
 1       stationary_spiral3_10.08.2025.csv
 2       stationary_spiral3_10.08.2025.csv
@@ -166,7 +166,7 @@ Name: source_path, Length: 9794, dtype: object",x,111.57296227419499,0.999879151
 9791    stationary_spiral3_10.08.2025.csv
 9792    stationary_spiral3_10.08.2025.csv
 9793    stationary_spiral3_10.08.2025.csv
-Name: source_path, Length: 9794, dtype: object",y,61.03228133045804,0.9997188567535699,5354.919653925725,6365
+Name: source_path, Length: 9794, dtype: object",y,328.45734235471934,0.9901193036532344,5354.919653925725,6365
 "0       stationary_spiral3_10.08.2025.csv
 1       stationary_spiral3_10.08.2025.csv
 2       stationary_spiral3_10.08.2025.csv
@@ -178,7 +178,7 @@ Name: source_path, Length: 9794, dtype: object",y,61.03228133045804,0.9997188567
 9791    stationary_spiral3_10.08.2025.csv
 9792    stationary_spiral3_10.08.2025.csv
 9793    stationary_spiral3_10.08.2025.csv
-Name: source_path, Length: 9794, dtype: object",z,73.47464419815435,0.9986254023589345,-3876.0,6157
+Name: source_path, Length: 9794, dtype: object",z,187.35024322517972,0.9860568697518773,-3876.0,6157
 "0       stationary_spiral3_10.08.2025.csv
 1       stationary_spiral3_10.08.2025.csv
 2       stationary_spiral3_10.08.2025.csv
@@ -190,7 +190,7 @@ Name: source_path, Length: 9794, dtype: object",z,73.47464419815435,0.9986254023
 9791    stationary_spiral3_10.08.2025.csv
 9792    stationary_spiral3_10.08.2025.csv
 9793    stationary_spiral3_10.08.2025.csv
-Name: source_path, Length: 9794, dtype: object",mag,85.09572499425684,0.9996532769884333,8634.967342150172,6157
+Name: source_path, Length: 9794, dtype: object",mag,324.13762534423,0.9927078224802685,8634.967342150172,6157
 "0       stationary_spiral4_10.08.2025.csv
 1       stationary_spiral4_10.08.2025.csv
 2       stationary_spiral4_10.08.2025.csv
@@ -202,7 +202,7 @@ Name: source_path, Length: 9794, dtype: object",mag,85.09572499425684,0.99965327
 9516    stationary_spiral4_10.08.2025.csv
 9517    stationary_spiral4_10.08.2025.csv
 9518    stationary_spiral4_10.08.2025.csv
-Name: source_path, Length: 9519, dtype: object",x,107.42305019793616,0.9999247809715701,7766.860884553039,5507
+Name: source_path, Length: 9519, dtype: object",x,395.22926361177514,0.9898134981363312,7766.860884553039,5507
 "0       stationary_spiral4_10.08.2025.csv
 1       stationary_spiral4_10.08.2025.csv
 2       stationary_spiral4_10.08.2025.csv
@@ -214,7 +214,7 @@ Name: source_path, Length: 9519, dtype: object",x,107.42305019793616,0.999924780
 9516    stationary_spiral4_10.08.2025.csv
 9517    stationary_spiral4_10.08.2025.csv
 9518    stationary_spiral4_10.08.2025.csv
-Name: source_path, Length: 9519, dtype: object",y,43.70011762869246,0.9998478722798655,5272.188160526899,5989
+Name: source_path, Length: 9519, dtype: object",y,353.14259132868705,0.9888687179113811,5272.188160526899,5989
 "0       stationary_spiral4_10.08.2025.csv
 1       stationary_spiral4_10.08.2025.csv
 2       stationary_spiral4_10.08.2025.csv
@@ -226,7 +226,7 @@ Name: source_path, Length: 9519, dtype: object",y,43.70011762869246,0.9998478722
 9516    stationary_spiral4_10.08.2025.csv
 9517    stationary_spiral4_10.08.2025.csv
 9518    stationary_spiral4_10.08.2025.csv
-Name: source_path, Length: 9519, dtype: object",z,56.204822506422744,0.9994430775839911,-3854.0,5780
+Name: source_path, Length: 9519, dtype: object",z,173.9631049697807,0.9882333414072587,-3854.0,5780
 "0       stationary_spiral4_10.08.2025.csv
 1       stationary_spiral4_10.08.2025.csv
 2       stationary_spiral4_10.08.2025.csv
@@ -238,7 +238,7 @@ Name: source_path, Length: 9519, dtype: object",z,56.204822506422744,0.999443077
 9516    stationary_spiral4_10.08.2025.csv
 9517    stationary_spiral4_10.08.2025.csv
 9518    stationary_spiral4_10.08.2025.csv
-Name: source_path, Length: 9519, dtype: object",mag,82.49591637570133,0.9997440428015739,8625.971133733292,5778
+Name: source_path, Length: 9519, dtype: object",mag,324.0065821990841,0.992701589742615,8625.971133733292,5778
 "0       stationary_spiral5_10.08.2025.csv
 1       stationary_spiral5_10.08.2025.csv
 2       stationary_spiral5_10.08.2025.csv
@@ -250,7 +250,7 @@ Name: source_path, Length: 9519, dtype: object",mag,82.49591637570133,0.99974404
 8831    stationary_spiral5_10.08.2025.csv
 8832    stationary_spiral5_10.08.2025.csv
 8833    stationary_spiral5_10.08.2025.csv
-Name: source_path, Length: 8834, dtype: object",x,270.9764648892937,0.9999497558942156,7408.357746491459,5380
+Name: source_path, Length: 8834, dtype: object",x,478.8488665273244,0.9895109215984921,7408.357746491459,5380
 "0       stationary_spiral5_10.08.2025.csv
 1       stationary_spiral5_10.08.2025.csv
 2       stationary_spiral5_10.08.2025.csv
@@ -262,7 +262,7 @@ Name: source_path, Length: 8834, dtype: object",x,270.9764648892937,0.9999497558
 8831    stationary_spiral5_10.08.2025.csv
 8832    stationary_spiral5_10.08.2025.csv
 8833    stationary_spiral5_10.08.2025.csv
-Name: source_path, Length: 8834, dtype: object",y,136.60222060265215,0.9998223482824025,5395.224740453358,5863
+Name: source_path, Length: 8834, dtype: object",y,392.15115377038444,0.988625406874923,5395.224740453358,5863
 "0       stationary_spiral5_10.08.2025.csv
 1       stationary_spiral5_10.08.2025.csv
 2       stationary_spiral5_10.08.2025.csv
@@ -274,7 +274,7 @@ Name: source_path, Length: 8834, dtype: object",y,136.60222060265215,0.999822348
 8831    stationary_spiral5_10.08.2025.csv
 8832    stationary_spiral5_10.08.2025.csv
 8833    stationary_spiral5_10.08.2025.csv
-Name: source_path, Length: 8834, dtype: object",z,157.6090808015242,0.9997692473366447,-4053.0,5652
+Name: source_path, Length: 8834, dtype: object",z,225.73982062008668,0.9895773109408461,-4053.0,5652
 "0       stationary_spiral5_10.08.2025.csv
 1       stationary_spiral5_10.08.2025.csv
 2       stationary_spiral5_10.08.2025.csv
@@ -286,7 +286,7 @@ Name: source_path, Length: 8834, dtype: object",z,157.6090808015242,0.9997692473
 8831    stationary_spiral5_10.08.2025.csv
 8832    stationary_spiral5_10.08.2025.csv
 8833    stationary_spiral5_10.08.2025.csv
-Name: source_path, Length: 8834, dtype: object",mag,209.75105998274012,0.9976632875595522,8478.156993120616,5653
+Name: source_path, Length: 8834, dtype: object",mag,419.08393912101997,0.9870216397630743,8478.156993120616,5653
 "0       stationary_spiral6_10.08.2025.csv
 1       stationary_spiral6_10.08.2025.csv
 2       stationary_spiral6_10.08.2025.csv
@@ -298,7 +298,7 @@ Name: source_path, Length: 8834, dtype: object",mag,209.75105998274012,0.9976632
 9970    stationary_spiral6_10.08.2025.csv
 9971    stationary_spiral6_10.08.2025.csv
 9972    stationary_spiral6_10.08.2025.csv
-Name: source_path, Length: 9973, dtype: object",x,104.69809908221777,0.9998579232074688,7794.438049019314,5556
+Name: source_path, Length: 9973, dtype: object",x,384.2040710644679,,7794.438049019314,5556
 "0       stationary_spiral6_10.08.2025.csv
 1       stationary_spiral6_10.08.2025.csv
 2       stationary_spiral6_10.08.2025.csv
@@ -310,7 +310,7 @@ Name: source_path, Length: 9973, dtype: object",x,104.69809908221777,0.999857923
 9970    stationary_spiral6_10.08.2025.csv
 9971    stationary_spiral6_10.08.2025.csv
 9972    stationary_spiral6_10.08.2025.csv
-Name: source_path, Length: 9973, dtype: object",y,86.89996871798435,0.9996631268606431,-5287.037402931816,6978
+Name: source_path, Length: 9973, dtype: object",y,355.5183231186562,,-5287.037402931816,6978
 "0       stationary_spiral6_10.08.2025.csv
 1       stationary_spiral6_10.08.2025.csv
 2       stationary_spiral6_10.08.2025.csv
@@ -322,7 +322,7 @@ Name: source_path, Length: 9973, dtype: object",y,86.89996871798435,0.9996631268
 9970    stationary_spiral6_10.08.2025.csv
 9971    stationary_spiral6_10.08.2025.csv
 9972    stationary_spiral6_10.08.2025.csv
-Name: source_path, Length: 9973, dtype: object",z,45.502745841022254,0.9996344585813104,-3853.0,5827
+Name: source_path, Length: 9973, dtype: object",z,144.26524488815585,,-3853.0,5827
 "0       stationary_spiral6_10.08.2025.csv
 1       stationary_spiral6_10.08.2025.csv
 2       stationary_spiral6_10.08.2025.csv
@@ -334,7 +334,7 @@ Name: source_path, Length: 9973, dtype: object",z,45.502745841022254,0.999634458
 9970    stationary_spiral6_10.08.2025.csv
 9971    stationary_spiral6_10.08.2025.csv
 9972    stationary_spiral6_10.08.2025.csv
-Name: source_path, Length: 9973, dtype: object",mag,91.76213830586433,0.9997197871452028,8640.702170541466,5827
+Name: source_path, Length: 9973, dtype: object",mag,293.596734719572,,8640.702170541466,5827
 "0       stationary_spiral7_10.08.2025.csv
 1       stationary_spiral7_10.08.2025.csv
 2       stationary_spiral7_10.08.2025.csv
@@ -346,7 +346,7 @@ Name: source_path, Length: 9973, dtype: object",mag,91.76213830586433,0.99971978
 9175    stationary_spiral7_10.08.2025.csv
 9176    stationary_spiral7_10.08.2025.csv
 9177    stationary_spiral7_10.08.2025.csv
-Name: source_path, Length: 9178, dtype: object",x,115.12446285888427,0.9998429135169042,7798.680689706433,5551
+Name: source_path, Length: 9178, dtype: object",x,423.88595989479796,0.9884971395008562,7798.680689706433,5551
 "0       stationary_spiral7_10.08.2025.csv
 1       stationary_spiral7_10.08.2025.csv
 2       stationary_spiral7_10.08.2025.csv
@@ -358,7 +358,7 @@ Name: source_path, Length: 9178, dtype: object",x,115.12446285888427,0.999842913
 9175    stationary_spiral7_10.08.2025.csv
 9176    stationary_spiral7_10.08.2025.csv
 9177    stationary_spiral7_10.08.2025.csv
-Name: source_path, Length: 9178, dtype: object",y,109.94790843870473,0.9994912715328689,-5315.321674179278,6973
+Name: source_path, Length: 9178, dtype: object",y,396.92854556737944,0.987011956619436,-5315.321674179278,6973
 "0       stationary_spiral7_10.08.2025.csv
 1       stationary_spiral7_10.08.2025.csv
 2       stationary_spiral7_10.08.2025.csv
@@ -370,7 +370,7 @@ Name: source_path, Length: 9178, dtype: object",y,109.94790843870473,0.999491271
 9175    stationary_spiral7_10.08.2025.csv
 9176    stationary_spiral7_10.08.2025.csv
 9177    stationary_spiral7_10.08.2025.csv
-Name: source_path, Length: 9178, dtype: object",z,47.1700004489255,0.9996460027866185,-3855.0,5823
+Name: source_path, Length: 9178, dtype: object",z,155.0740127664178,0.9909482984252524,-3855.0,5823
 "0       stationary_spiral7_10.08.2025.csv
 1       stationary_spiral7_10.08.2025.csv
 2       stationary_spiral7_10.08.2025.csv
@@ -382,7 +382,7 @@ Name: source_path, Length: 9178, dtype: object",z,47.1700004489255,0.99964600278
 9175    stationary_spiral7_10.08.2025.csv
 9176    stationary_spiral7_10.08.2025.csv
 9177    stationary_spiral7_10.08.2025.csv
-Name: source_path, Length: 9178, dtype: object",mag,98.79536602562793,0.9997185553373923,8648.51715613723,5823
+Name: source_path, Length: 9178, dtype: object",mag,322.94541662817244,0.9928418687946372,8648.51715613723,5823
 "0       stationary_spiral8_10.08.2025.csv
 1       stationary_spiral8_10.08.2025.csv
 2       stationary_spiral8_10.08.2025.csv
@@ -394,7 +394,7 @@ Name: source_path, Length: 9178, dtype: object",mag,98.79536602562793,0.99971855
 8899    stationary_spiral8_10.08.2025.csv
 8900    stationary_spiral8_10.08.2025.csv
 8901    stationary_spiral8_10.08.2025.csv
-Name: source_path, Length: 8902, dtype: object",x,544.3609125865144,0.999819142111321,7158.0419459514205,5331
+Name: source_path, Length: 8902, dtype: object",x,686.2935075175747,0.9881258577980556,7158.0419459514205,5331
 "0       stationary_spiral8_10.08.2025.csv
 1       stationary_spiral8_10.08.2025.csv
 2       stationary_spiral8_10.08.2025.csv
@@ -406,7 +406,7 @@ Name: source_path, Length: 8902, dtype: object",x,544.3609125865144,0.9998191421
 8899    stationary_spiral8_10.08.2025.csv
 8900    stationary_spiral8_10.08.2025.csv
 8901    stationary_spiral8_10.08.2025.csv
-Name: source_path, Length: 8902, dtype: object",y,151.51099904849892,0.9993104860520436,5336.534877614875,5812
+Name: source_path, Length: 8902, dtype: object",y,420.3770710757562,0.9865460129172642,5336.534877614875,5812
 "0       stationary_spiral8_10.08.2025.csv
 1       stationary_spiral8_10.08.2025.csv
 2       stationary_spiral8_10.08.2025.csv
@@ -418,7 +418,7 @@ Name: source_path, Length: 8902, dtype: object",y,151.51099904849892,0.999310486
 8899    stationary_spiral8_10.08.2025.csv
 8900    stationary_spiral8_10.08.2025.csv
 8901    stationary_spiral8_10.08.2025.csv
-Name: source_path, Length: 8902, dtype: object",z,285.3027177547433,0.9993766735301466,-4170.0,5602
+Name: source_path, Length: 8902, dtype: object",z,319.72964048936154,0.9913184114776741,-4170.0,5602
 "0       stationary_spiral8_10.08.2025.csv
 1       stationary_spiral8_10.08.2025.csv
 2       stationary_spiral8_10.08.2025.csv
@@ -430,7 +430,7 @@ Name: source_path, Length: 8902, dtype: object",z,285.3027177547433,0.9993766735
 8899    stationary_spiral8_10.08.2025.csv
 8900    stationary_spiral8_10.08.2025.csv
 8901    stationary_spiral8_10.08.2025.csv
-Name: source_path, Length: 8902, dtype: object",mag,384.46770231987847,0.9930228640710745,8347.442302885358,5602
+Name: source_path, Length: 8902, dtype: object",mag,527.7032479223532,0.981946731386499,8347.442302885358,5602
 "0       stationary_spiral9_10.08.2025.csv
 1       stationary_spiral9_10.08.2025.csv
 2       stationary_spiral9_10.08.2025.csv
@@ -442,7 +442,7 @@ Name: source_path, Length: 8902, dtype: object",mag,384.46770231987847,0.9930228
 9210    stationary_spiral9_10.08.2025.csv
 9211    stationary_spiral9_10.08.2025.csv
 9212    stationary_spiral9_10.08.2025.csv
-Name: source_path, Length: 9213, dtype: object",x,118.4405227655923,0.9997747646303715,7803.630437174739,5535
+Name: source_path, Length: 9213, dtype: object",x,429.2143761172872,0.9881663431897469,7803.630437174739,5535
 "0       stationary_spiral9_10.08.2025.csv
 1       stationary_spiral9_10.08.2025.csv
 2       stationary_spiral9_10.08.2025.csv
@@ -454,7 +454,7 @@ Name: source_path, Length: 9213, dtype: object",x,118.4405227655923,0.9997747646
 9210    stationary_spiral9_10.08.2025.csv
 9211    stationary_spiral9_10.08.2025.csv
 9212    stationary_spiral9_10.08.2025.csv
-Name: source_path, Length: 9213, dtype: object",y,141.3295348102403,0.9992006711735036,-5376.132857361321,6958
+Name: source_path, Length: 9213, dtype: object",y,412.1340325443831,0.9863260243914563,-5376.132857361321,6958
 "0       stationary_spiral9_10.08.2025.csv
 1       stationary_spiral9_10.08.2025.csv
 2       stationary_spiral9_10.08.2025.csv
@@ -466,7 +466,7 @@ Name: source_path, Length: 9213, dtype: object",y,141.3295348102403,0.9992006711
 9210    stationary_spiral9_10.08.2025.csv
 9211    stationary_spiral9_10.08.2025.csv
 9212    stationary_spiral9_10.08.2025.csv
-Name: source_path, Length: 9213, dtype: object",z,54.20418506249556,0.999249412672999,-3861.0,5807
+Name: source_path, Length: 9213, dtype: object",z,149.33493782529163,0.9915424274617259,-3861.0,5807
 "0       stationary_spiral9_10.08.2025.csv
 1       stationary_spiral9_10.08.2025.csv
 2       stationary_spiral9_10.08.2025.csv
@@ -478,4 +478,4 @@ Name: source_path, Length: 9213, dtype: object",z,54.20418506249556,0.9992494126
 9210    stationary_spiral9_10.08.2025.csv
 9211    stationary_spiral9_10.08.2025.csv
 9212    stationary_spiral9_10.08.2025.csv
-Name: source_path, Length: 9213, dtype: object",mag,112.30474189761782,0.9996030692629425,8654.039865866114,5808
+Name: source_path, Length: 9213, dtype: object",mag,320.95031885063,0.9930580104053588,8654.039865866114,5808
