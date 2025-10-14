@@ -8,6 +8,7 @@ import pandas as pd
 from scipy.signal import butter, filtfilt
 import matplotlib.pyplot as plt
 import seaborn as sns
+import mplcursors
 from matplotlib.widgets import CheckButtons
 from pathlib import Path
 
@@ -18,8 +19,6 @@ class Paths:
     _project_root: Path = Path(__file__).resolve().parent.parent
     mounted_glob: str = str(_project_root / "Load_Cell_Spiral_test" / "H6b.90" / "10.08.2025" / "mounted_runs" / "*.csv")
     reseated_glob: str = str(_project_root / "Load_Cell_Spiral_test" / "H6b.90" / "10.08.2025" / "stationary_runs" / "*.csv")
-    plots_dir: str = str(_project_root / "outputs" / "plots")
-    metrics_dir: str = str(_project_root / "outputs" / "metrics")
 
 
 @dataclass
@@ -35,16 +34,15 @@ class Params:
     plot_mean_band: bool = True
     local_peak_threshold: float = 1000.0  # threshold for local peak window on 'x'
     rotation_deg_z: float =  -45.0  # rotate measured x/y/z about Z after alignment
+    subtract_baseline: bool = False  # if True, subtract per-run median baseline
+    # Alignment-only smoothing (minimal) applied internally before peak-finding
+    align_smoothing_enabled: bool = True
+    align_smoothing_window: int = 17  # frames; should be odd
 
     def __post_init__(self) -> None:
         if self.axis_mapping is None:
             # Default to summed axes. Change to e.g. '1-inner-x' if you need a specific cell.
             self.axis_mapping = {"x": "sum-x", "y": "sum-y", "z": "sum-z"}
-
-
-def ensure_dirs(paths: Paths) -> None:
-    os.makedirs(paths.plots_dir, exist_ok=True)
-    os.makedirs(paths.metrics_dir, exist_ok=True)
 
 
 def load_group(file_glob: str, axis_mapping: Dict[str, str]) -> List[pd.DataFrame]:
@@ -97,20 +95,37 @@ def butter_lowpass(cutoff_hz: float, fs_hz: float, order: int = 2) -> Tuple[np.n
     return b, a
 
 
+def smooth_for_alignment(y: np.ndarray, window: int) -> np.ndarray:
+    """Minimal moving-average smoothing for alignment-only peak detection.
+
+    Does not mutate original data; used only to improve robustness of peak-finding.
+    """
+    if y.size == 0:
+        return y
+    w = int(window) if window is not None else 0
+    if w <= 1:
+        return y
+    if (w % 2) == 0:
+        w += 1  # prefer odd window for symmetry
+    kernel = np.ones(w, dtype=float) / float(w)
+    return np.convolve(y.astype(float), kernel, mode="same")
+
 def preprocess_signal(df: pd.DataFrame, params: Params) -> pd.DataFrame:
     out = df.copy()
-    # Baseline: using first N seconds if time exists, else first N samples as approx
-    if "time" in out.columns:
-        t0 = out["time"].iloc[0]
-        baseline_mask = out["time"] <= (t0 + params.baseline_seconds * 1000.0)
-    else:
-        n = max(1, int(0.5 * len(out)))  # fallback: 50% of start; conservative
-        baseline_mask = pd.Series([True] * n + [False] * (len(out) - n))
+    # Optional baseline subtraction per run
+    if params.subtract_baseline:
+        # Baseline: using first N seconds if time exists, else first N samples as approx
+        if "time" in out.columns:
+            t0 = out["time"].iloc[0]
+            baseline_mask = out["time"] <= (t0 + params.baseline_seconds * 1000.0)
+        else:
+            n = max(1, int(0.5 * len(out)))  # fallback: 50% of start; conservative
+            baseline_mask = pd.Series([True] * n + [False] * (len(out) - n))
 
-    for col in ("x", "y", "z", "mag", "bx", "by", "bz", "bmag"):
-        baseline = out.loc[baseline_mask, col].median()
-        if col in out.columns:
-            out[col] = out[col] - baseline
+        for col in ("x", "y", "z", "mag", "bx", "by", "bz", "bmag"):
+            baseline = out.loc[baseline_mask, col].median()
+            if col in out.columns:
+                out[col] = out[col] - baseline
 
     if params.apply_filter:
         fs_hz = estimate_sampling_rate_hz(out)
@@ -225,10 +240,11 @@ def align_group_by_local_peak(dfs: List[pd.DataFrame], params: Params, threshold
     peak_indices: List[int] = []
     for df in dfs:
         x = df["x"].to_numpy()
-        idx = find_local_peak_window_index(x, thr)
+        x_for_peak = smooth_for_alignment(x, params.align_smoothing_window) if params.align_smoothing_enabled else x
+        idx = find_local_peak_window_index(x_for_peak, thr)
         if idx is None:
             # fallback to global |x| peak
-            idx = int(np.nanargmax(np.abs(x)))
+            idx = int(np.nanargmax(np.abs(x_for_peak)))
         peak_indices.append(int(idx))
 
     ref_peak = int(np.median(peak_indices))
@@ -367,6 +383,9 @@ def align_sets_by_first_x_peak(
 
     m_series = m_stats["x"]["mean"].to_numpy()
     r_series = r_stats["x"]["mean"].to_numpy()
+    if params.align_smoothing_enabled:
+        m_series = smooth_for_alignment(m_series, params.align_smoothing_window)
+        r_series = smooth_for_alignment(r_series, params.align_smoothing_window)
 
     m_idx = find_local_peak_window_index(m_series, params.local_peak_threshold)
     if m_idx is None:
@@ -392,124 +411,6 @@ def align_sets_by_first_x_peak(
         out_reseated.append(out)
     return mounted, out_reseated
 
-
-def compute_metrics(dfs: List[pd.DataFrame], mean_ref, cols: List[str]) -> pd.DataFrame:
-    records = []
-    for df in dfs:
-        name = df.get("source_path", "run")
-        for col in cols:
-            y = df[col].to_numpy()
-            # Resolve mean reference for this column
-            mu_series = None
-            if isinstance(mean_ref, dict) and col in mean_ref:
-                mu_series = mean_ref[col]
-            elif isinstance(mean_ref, pd.DataFrame) and col in mean_ref.columns:
-                mu_series = mean_ref[col]
-            else:
-                mu_series = pd.Series(np.full_like(y, np.nan, dtype=float))
-
-            # If mean is a Series with an aligned x-axis, reindex to this run's aligned frames
-            if isinstance(mu_series, pd.Series) and "frame_aligned" in df.columns and mu_series.index.dtype.kind in ("i", "u", "f"):
-                mu = mu_series.reindex(df["frame_aligned"]).to_numpy()
-            else:
-                mu = np.asarray(mu_series)
-
-            # Safely handle different lengths by truncating to the overlap
-            n = min(len(y), len(mu))
-            if n <= 0:
-                rmse = float("nan")
-                r = float("nan")
-                peak_idx = int(np.nan)
-                peak_amp = float("nan")
-                records.append({
-                    "run": name,
-                    "axis": col,
-                    "rmse": rmse,
-                    "pearson_r": r,
-                    "peak_amp": peak_amp,
-                    "peak_idx": peak_idx,
-                })
-                continue
-            y_use = y[:n]
-            mu_use = mu[:n]
-
-            rmse = float(np.sqrt(np.nanmean((y_use - mu_use) ** 2)))
-            # Pearson r
-            if np.std(y_use) == 0 or np.std(mu_use) == 0:
-                r = np.nan
-            else:
-                r = float(np.corrcoef(y_use, mu_use)[0, 1])
-            # Peak and latency
-            peak_idx = int(np.nanargmax(np.abs(y_use)))
-            peak_amp = float(y_use[peak_idx])
-            records.append(
-                {
-                    "run": name,
-                    "axis": col,
-                    "rmse": rmse,
-                    "pearson_r": r,
-                    "peak_amp": peak_amp,
-                    "peak_idx": peak_idx,
-                }
-            )
-    return pd.DataFrame.from_records(records)
-
-
-def summarize_set(metrics_df: pd.DataFrame, stats: Dict[str, pd.DataFrame], axes: List[str]) -> pd.DataFrame:
-    rows = []
-    for axis in axes:
-        m_axis = metrics_df.loc[metrics_df["axis"] == axis]
-        rmse_mean = float(np.nanmean(m_axis["rmse"])) if not m_axis.empty else float("nan")
-        rmse_std = float(np.nanstd(m_axis["rmse"])) if not m_axis.empty else float("nan")
-        r_mean = float(np.nanmean(m_axis["pearson_r"])) if not m_axis.empty else float("nan")
-        peak_amp_mean = float(np.nanmean(m_axis["peak_amp"])) if not m_axis.empty else float("nan")
-        peak_amp_std = float(np.nanstd(m_axis["peak_amp"])) if not m_axis.empty else float("nan")
-        peak_idx_mean = float(np.nanmean(m_axis["peak_idx"])) if not m_axis.empty else float("nan")
-        peak_idx_std = float(np.nanstd(m_axis["peak_idx"])) if not m_axis.empty else float("nan")
-
-        mean_band_std = float(np.nanmean(stats[axis]["std"])) if axis in stats else float("nan")
-
-        rows.append({
-            "axis": axis,
-            "rmse_mean": rmse_mean,
-            "rmse_std": rmse_std,
-            "pearson_r_mean": r_mean,
-            "peak_amp_mean": peak_amp_mean,
-            "peak_amp_std": peak_amp_std,
-            "peak_idx_mean": peak_idx_mean,
-            "peak_idx_std": peak_idx_std,
-            "mean_std_over_time": mean_band_std,
-            "num_runs": int(len(m_axis))
-        })
-    return pd.DataFrame(rows)
-
-
-def summarize_between_sets(m_stats: Dict[str, pd.DataFrame], r_stats: Dict[str, pd.DataFrame], axes: List[str]) -> pd.DataFrame:
-    rows = []
-    for axis in axes:
-        if axis not in m_stats or axis not in r_stats:
-            rows.append({"axis": axis, "rmse_between_means": float("nan"), "pearson_r_between_means": float("nan"), "delta_peak_idx": float("nan"), "delta_peak_amp": float("nan")})
-            continue
-        a = m_stats[axis]["mean"].to_numpy()
-        b = r_stats[axis]["mean"].to_numpy()
-        n = min(len(a), len(b))
-        if n <= 0:
-            rows.append({"axis": axis, "rmse_between_means": float("nan"), "pearson_r_between_means": float("nan"), "delta_peak_idx": float("nan"), "delta_peak_amp": float("nan")})
-            continue
-        a = a[:n]
-        b = b[:n]
-        rmse_means = float(np.sqrt(np.nanmean((a - b) ** 2)))
-        r_means = float(np.corrcoef(a, b)[0, 1]) if (np.std(a) != 0 and np.std(b) != 0) else float("nan")
-        a_peak_idx = int(np.nanargmax(np.abs(a))) if np.size(a) else 0
-        b_peak_idx = int(np.nanargmax(np.abs(b))) if np.size(b) else 0
-        rows.append({
-            "axis": axis,
-            "rmse_between_means": rmse_means,
-            "pearson_r_between_means": r_means,
-            "delta_peak_idx": float(b_peak_idx - a_peak_idx),
-            "delta_peak_amp": float(b[b_peak_idx] - a[a_peak_idx]) if n > 0 else float("nan")
-        })
-    return pd.DataFrame(rows)
 
 def plot_overlaid(
     mounted: List[pd.DataFrame],
@@ -542,10 +443,20 @@ def plot_overlaid(
         for df in mounted:
             x_vals = df["frame_aligned"] if (params.alignment_method in ("peak", "local_peak") and "frame_aligned" in df.columns) else df.index
             line, = ax.plot(x_vals, df[col], color="#1f77b4", alpha=0.5, linewidth=1.0)
+            if "source_path" in df.columns:
+                try:
+                    line._source_path = str(df["source_path"].iloc[0])
+                except Exception:
+                    pass
             mounted_lines.append(line)
         for df in reseated:
             x_vals = df["frame_aligned"] if (params.alignment_method in ("peak", "local_peak") and "frame_aligned" in df.columns) else df.index
             line, = ax.plot(x_vals, df[col], color="#d62728", alpha=0.5, linewidth=1.0)
+            if "source_path" in df.columns:
+                try:
+                    line._source_path = str(df["source_path"].iloc[0])
+                except Exception:
+                    pass
             reseated_lines.append(line)
         ax.set_title(f"{col.upper()} vs Frame")
         ax.set_xlabel("Frame")
@@ -559,11 +470,21 @@ def plot_overlaid(
                 if bcol in df.columns:
                     x_vals = df["frame_aligned"] if (params.alignment_method in ("peak", "local_peak") and "frame_aligned" in df.columns) else df.index
                     tl, = ax.plot(x_vals, df[bcol], color="#222222", alpha=0.5, linewidth=1.0)
+                    if "source_path" in df.columns:
+                        try:
+                            tl._source_path = str(df["source_path"].iloc[0])
+                        except Exception:
+                            pass
                     truth_mounted_lines.append(tl)
             for df in reseated:
                 if bcol in df.columns:
                     x_vals = df["frame_aligned"] if (params.alignment_method in ("peak", "local_peak") and "frame_aligned" in df.columns) else df.index
                     tl, = ax.plot(x_vals, df[bcol], color="#666666", alpha=0.5, linewidth=1.0)
+                    if "source_path" in df.columns:
+                        try:
+                            tl._source_path = str(df["source_path"].iloc[0])
+                        except Exception:
+                            pass
                     truth_reseated_lines.append(tl)
 
     # Optional mean bands
@@ -642,7 +563,7 @@ def plot_overlaid(
             ax.legend(loc="upper right", fontsize=8)
 
             # Truth mean ± SD overlays per set if available
-            if truth_available_m and 't_m_stats' in locals() and col in t_m_stats:
+            if 't_m_stats' in locals() and col in locals().get('t_m_stats', {}):
                 idx = t_m_stats[col].index.to_numpy() if hasattr(t_m_stats[col], 'index') else np.arange(len(t_m_stats[col]["mean"]))
                 t_m_mean_line, = ax.plot(idx, t_m_stats[col]["mean"], color="#222222", linewidth=2.0, label="Mounted truth mean")
                 truth_mounted_mean_lines.append(t_m_mean_line)
@@ -655,7 +576,7 @@ def plot_overlaid(
                     label="Mounted truth ±1 SD",
                 )
                 truth_mounted_bands.append(t_m_band)
-            if truth_available_r and 't_r_stats' in locals() and col in t_r_stats:
+            if 't_r_stats' in locals() and col in locals().get('t_r_stats', {}):
                 idx = t_r_stats[col].index.to_numpy() if hasattr(t_r_stats[col], 'index') else np.arange(len(t_r_stats[col]["mean"]))
                 t_r_mean_line, = ax.plot(idx, t_r_stats[col]["mean"], color="#666666", linewidth=2.0, label="Reseated truth mean")
                 truth_reseated_mean_lines.append(t_r_mean_line)
@@ -726,6 +647,41 @@ def plot_overlaid(
 
         check.on_clicked(on_toggle)
 
+    # Hover tooltips showing source filename for single-run lines
+    run_lines = mounted_lines + reseated_lines + truth_mounted_lines + truth_reseated_lines
+    if run_lines:
+        cursor = mplcursors.cursor(run_lines, hover=True)
+
+        @cursor.connect("add")
+        def on_add(sel):
+            line = sel.artist
+            source = getattr(line, "_source_path", None)
+            if not source:
+                source = line.get_label() or ""
+            sel.annotation.set_text(str(source))
+
+        # Separate hover toggle above the line toggles (not in the same box)
+        hax = fig.add_axes([0.87, 0.70, 0.12, 0.08])
+        hover_check = CheckButtons(hax, labels=["Hover filenames"], actives=[True])
+
+        def on_hover_toggle(_label: str) -> None:
+            enabled = hover_check.get_status()[0]
+            try:
+                cursor.enabled = enabled
+                if not enabled:
+                    # Hide any existing annotations when disabling
+                    try:
+                        for ann in list(cursor.annotations):
+                            ann.set_visible(False)
+                    except Exception:
+                        pass
+                for a in axes.ravel():
+                    a.figure.canvas.draw_idle()
+            except Exception:
+                pass
+
+        hover_check.on_clicked(on_hover_toggle)
+
     fig.suptitle("Load Cell Sensitivity: Mounted (blue) vs Reseated (red) vs Truth (black/gray)")
     # Show interactively instead of saving for now
     plt.show()
@@ -734,7 +690,6 @@ def plot_overlaid(
 def main() -> None:
     paths = Paths()
     params = Params()
-    ensure_dirs(paths)
 
     # Load data
     mounted_raw = load_group(paths.mounted_glob, params.axis_mapping)
@@ -771,36 +726,12 @@ def main() -> None:
     # Plot
     plot_overlaid(mounted_adj, reseated_adj, paths, params)
 
-    # Metrics
-    cols = ["x", "y", "z", "mag"]
-    if params.alignment_method in ("peak", "local_peak"):
-        # Compute metrics on aligned grid per set
-        m_stats, _ = compute_group_stats_aligned(mounted_adj, cols, x_col="frame_aligned")
-        r_stats, _ = compute_group_stats_aligned(reseated_adj, cols, x_col="frame_aligned")
-        # Convert mean frames to arrays aligned to their own grid
-        m_metrics = compute_metrics(mounted_adj, {k: v["mean"] for k, v in m_stats.items()}, cols)  # type: ignore
-        r_metrics = compute_metrics(reseated_adj, {k: v["mean"] for k, v in r_stats.items()}, cols)  # type: ignore
-    else:
-        m_stats = compute_group_stats(mounted_adj, cols)
-        r_stats = compute_group_stats(reseated_adj, cols)
-        m_metrics = compute_metrics(mounted_adj, {k: v["mean"] for k, v in m_stats.items()}, cols)  # type: ignore
-        r_metrics = compute_metrics(reseated_adj, {k: v["mean"] for k, v in r_stats.items()}, cols)  # type: ignore
-
-    # Save compact summaries (per-set and between-set)
-    mounted_summary = summarize_set(m_metrics, m_stats, cols)
-    reseated_summary = summarize_set(r_metrics, r_stats, cols)
-    between_summary = summarize_between_sets(m_stats, r_stats, cols)
-    mounted_summary.to_csv(os.path.join(paths.metrics_dir, "mounted_summary.csv"), index=False)
-    reseated_summary.to_csv(os.path.join(paths.metrics_dir, "reseated_summary.csv"), index=False)
-    between_summary.to_csv(os.path.join(paths.metrics_dir, "between_sets_summary.csv"), index=False)
-
-    print("Saved summaries:")
-    print(f"- {os.path.join(paths.metrics_dir, 'mounted_summary.csv')}")
-    print(f"- {os.path.join(paths.metrics_dir, 'reseated_summary.csv')}")
-    print(f"- {os.path.join(paths.metrics_dir, 'between_sets_summary.csv')}")
+    # Metrics are computed in-memory as needed for plots; nothing is written to disk.
 
 
 if __name__ == "__main__":
     main()
+
+
 
 
