@@ -63,9 +63,33 @@ def load_group(file_glob: str, axis_mapping: Dict[str, str]) -> List[pd.DataFram
 
         present_cols = [c for c in keep_cols if c in df.columns]
         tidy = df[present_cols].copy()
-        # Compute magnitude
+        # Compute magnitude for SUM (default mapping)
         tidy.rename(columns={axis_mapping["x"]: "x", axis_mapping["y"]: "y", axis_mapping["z"]: "z"}, inplace=True)
         tidy["mag"] = np.sqrt(tidy["x"] ** 2 + tidy["y"] ** 2 + tidy["z"] ** 2)
+
+        # Compute INNER and OUTER aggregates from raw columns if available
+        try:
+            inner_x_cols = [f"{i}-inner-x" for i in (0, 1, 2, 3)]
+            inner_y_cols = [f"{i}-inner-y" for i in (0, 1, 2, 3)]
+            inner_z_cols = [f"{i}-inner-z" for i in (0, 1, 2, 3)]
+            if all(c in df.columns for c in inner_x_cols + inner_y_cols + inner_z_cols):
+                tidy["x_inner"] = df[inner_x_cols].sum(axis=1)
+                tidy["y_inner"] = df[inner_y_cols].sum(axis=1)
+                tidy["z_inner"] = df[inner_z_cols].sum(axis=1)
+                tidy["mag_inner"] = np.sqrt(tidy["x_inner"] ** 2 + tidy["y_inner"] ** 2 + tidy["z_inner"] ** 2)
+        except Exception:
+            pass
+        try:
+            outer_x_cols = [f"{i}-outer-x" for i in (0, 1, 2, 3)]
+            outer_y_cols = [f"{i}-outer-y" for i in (0, 1, 2, 3)]
+            outer_z_cols = [f"{i}-outer-z" for i in (0, 1, 2, 3)]
+            if all(c in df.columns for c in outer_x_cols + outer_y_cols + outer_z_cols):
+                tidy["x_outer"] = df[outer_x_cols].sum(axis=1)
+                tidy["y_outer"] = df[outer_y_cols].sum(axis=1)
+                tidy["z_outer"] = df[outer_z_cols].sum(axis=1)
+                tidy["mag_outer"] = np.sqrt(tidy["x_outer"] ** 2 + tidy["y_outer"] ** 2 + tidy["z_outer"] ** 2)
+        except Exception:
+            pass
         # Compute truth magnitude if truth exists
         if all(c in tidy.columns for c in ("bx", "by", "bz")):
             tidy["bmag"] = np.sqrt(tidy["bx"] ** 2 + tidy["by"] ** 2 + tidy["bz"] ** 2)
@@ -122,17 +146,29 @@ def preprocess_signal(df: pd.DataFrame, params: Params) -> pd.DataFrame:
             n = max(1, int(0.5 * len(out)))  # fallback: 50% of start; conservative
             baseline_mask = pd.Series([True] * n + [False] * (len(out) - n))
 
-        for col in ("x", "y", "z", "mag", "bx", "by", "bz", "bmag"):
-            baseline = out.loc[baseline_mask, col].median()
+        candidate_cols = (
+            "x", "y", "z", "mag",
+            "x_inner", "y_inner", "z_inner", "mag_inner",
+            "x_outer", "y_outer", "z_outer", "mag_outer",
+            "bx", "by", "bz", "bmag",
+        )
+        for col in candidate_cols:
             if col in out.columns:
+                baseline = out.loc[baseline_mask, col].median()
                 out[col] = out[col] - baseline
 
     if params.apply_filter:
         fs_hz = estimate_sampling_rate_hz(out)
         if not np.isnan(fs_hz) and fs_hz > 0 and params.filter_cutoff_hz < 0.5 * fs_hz:
             b, a = butter_lowpass(params.filter_cutoff_hz, fs_hz, params.filter_order)
-            for col in ("x", "y", "z", "mag"):
-                out[col] = filtfilt(b, a, out[col].to_numpy(), method="gust")
+            filter_cols = (
+                "x", "y", "z", "mag",
+                "x_inner", "y_inner", "z_inner", "mag_inner",
+                "x_outer", "y_outer", "z_outer", "mag_outer",
+            )
+            for col in filter_cols:
+                if col in out.columns:
+                    out[col] = filtfilt(b, a, out[col].to_numpy(), method="gust")
     return out
 
 
@@ -287,11 +323,24 @@ def rotate_group_about_z(dfs: List[pd.DataFrame], theta_deg: float) -> List[pd.D
     out_list: List[pd.DataFrame] = []
     for df in dfs:
         out = df.copy()
+        # Sum variant
         if all(col in out.columns for col in ("x", "y", "z")):
             xyz = out[["x", "y", "z"]].to_numpy(dtype=float)
             rot = xyz @ Rz.T
             out[["x", "y", "z"]] = rot
             out["mag"] = np.sqrt(np.sum(rot ** 2, axis=1))
+        # Inner variant
+        if all(col in out.columns for col in ("x_inner", "y_inner", "z_inner")):
+            xyz_i = out[["x_inner", "y_inner", "z_inner"]].to_numpy(dtype=float)
+            rot_i = xyz_i @ Rz.T
+            out[["x_inner", "y_inner", "z_inner"]] = rot_i
+            out["mag_inner"] = np.sqrt(np.sum(rot_i ** 2, axis=1))
+        # Outer variant
+        if all(col in out.columns for col in ("x_outer", "y_outer", "z_outer")):
+            xyz_o = out[["x_outer", "y_outer", "z_outer"]].to_numpy(dtype=float)
+            rot_o = xyz_o @ Rz.T
+            out[["x_outer", "y_outer", "z_outer"]] = rot_o
+            out["mag_outer"] = np.sqrt(np.sum(rot_o ** 2, axis=1))
         out_list.append(out)
     return out_list
 
@@ -420,16 +469,30 @@ def plot_overlaid(
 ) -> None:
     sns.set_style("whitegrid")
     cols = ["x", "y", "z", "mag"]
-    fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+    fig, axes = plt.subplots(2, 2, figsize=(16, 9))
     axes_map = {"x": (0, 0), "y": (0, 1), "z": (1, 0), "mag": (1, 1)}
 
     # Collect artists for interactive toggling
-    mounted_lines: list = []
+    mounted_lines: list = []  # sum variant runs
     reseated_lines: list = []
-    mounted_mean_lines: list = []
+    mounted_mean_lines: list = []  # sum variant means
     reseated_mean_lines: list = []
-    mounted_bands: list = []
+    mounted_bands: list = []  # sum variant bands
     reseated_bands: list = []
+
+    inner_mounted_lines: list = []
+    inner_reseated_lines: list = []
+    inner_mounted_mean_lines: list = []
+    inner_reseated_mean_lines: list = []
+    inner_mounted_bands: list = []
+    inner_reseated_bands: list = []
+
+    outer_mounted_lines: list = []
+    outer_reseated_lines: list = []
+    outer_mounted_mean_lines: list = []
+    outer_reseated_mean_lines: list = []
+    outer_mounted_bands: list = []
+    outer_reseated_bands: list = []
     truth_mounted_lines: list = []
     truth_reseated_lines: list = []
     truth_mounted_mean_lines: list = []
@@ -442,22 +505,77 @@ def plot_overlaid(
         ax = axes[r][c]
         for df in mounted:
             x_vals = df["frame_aligned"] if (params.alignment_method in ("peak", "local_peak") and "frame_aligned" in df.columns) else df.index
-            line, = ax.plot(x_vals, df[col], color="#1f77b4", alpha=0.5, linewidth=1.0)
+            line, = ax.plot(x_vals, df[col], color="#1f77b4", alpha=0.5, linewidth=1.0, linestyle="-")
             if "source_path" in df.columns:
                 try:
                     line._source_path = str(df["source_path"].iloc[0])
                 except Exception:
                     pass
             mounted_lines.append(line)
+        # Inner variant
+        inner_col = f"{col}_inner" if col != "mag" else "mag_inner"
+        if inner_col in mounted[0].columns:
+            for df in mounted:
+                if inner_col not in df.columns:
+                    continue
+                x_vals = df["frame_aligned"] if (params.alignment_method in ("peak", "local_peak") and "frame_aligned" in df.columns) else df.index
+                line, = ax.plot(x_vals, df[inner_col], color="#1f77b4", alpha=0.5, linewidth=1.0, linestyle="--")
+                if "source_path" in df.columns:
+                    try:
+                        line._source_path = str(df["source_path"].iloc[0])
+                    except Exception:
+                        pass
+                inner_mounted_lines.append(line)
+        # Outer variant
+        outer_col = f"{col}_outer" if col != "mag" else "mag_outer"
+        if outer_col in mounted[0].columns:
+            for df in mounted:
+                if outer_col not in df.columns:
+                    continue
+                x_vals = df["frame_aligned"] if (params.alignment_method in ("peak", "local_peak") and "frame_aligned" in df.columns) else df.index
+                line, = ax.plot(x_vals, df[outer_col], color="#1f77b4", alpha=0.5, linewidth=1.0, linestyle=":")
+                if "source_path" in df.columns:
+                    try:
+                        line._source_path = str(df["source_path"].iloc[0])
+                    except Exception:
+                        pass
+                outer_mounted_lines.append(line)
+
         for df in reseated:
             x_vals = df["frame_aligned"] if (params.alignment_method in ("peak", "local_peak") and "frame_aligned" in df.columns) else df.index
-            line, = ax.plot(x_vals, df[col], color="#d62728", alpha=0.5, linewidth=1.0)
+            line, = ax.plot(x_vals, df[col], color="#d62728", alpha=0.5, linewidth=1.0, linestyle="-")
             if "source_path" in df.columns:
                 try:
                     line._source_path = str(df["source_path"].iloc[0])
                 except Exception:
                     pass
             reseated_lines.append(line)
+        # Inner variant
+        if inner_col in reseated[0].columns:
+            for df in reseated:
+                if inner_col not in df.columns:
+                    continue
+                x_vals = df["frame_aligned"] if (params.alignment_method in ("peak", "local_peak") and "frame_aligned" in df.columns) else df.index
+                line, = ax.plot(x_vals, df[inner_col], color="#d62728", alpha=0.5, linewidth=1.0, linestyle="--")
+                if "source_path" in df.columns:
+                    try:
+                        line._source_path = str(df["source_path"].iloc[0])
+                    except Exception:
+                        pass
+                inner_reseated_lines.append(line)
+        # Outer variant
+        if outer_col in reseated[0].columns:
+            for df in reseated:
+                if outer_col not in df.columns:
+                    continue
+                x_vals = df["frame_aligned"] if (params.alignment_method in ("peak", "local_peak") and "frame_aligned" in df.columns) else df.index
+                line, = ax.plot(x_vals, df[outer_col], color="#d62728", alpha=0.5, linewidth=1.0, linestyle=":")
+                if "source_path" in df.columns:
+                    try:
+                        line._source_path = str(df["source_path"].iloc[0])
+                    except Exception:
+                        pass
+                outer_reseated_lines.append(line)
         ax.set_title(f"{col.upper()} vs Frame")
         ax.set_xlabel("Frame")
         ax.set_ylabel(col.upper())
@@ -489,12 +607,18 @@ def plot_overlaid(
 
     # Optional mean bands
     if params.plot_mean_band and mounted and reseated:
+        # Stats for sum + inner + outer
+        all_cols = [
+            "x", "y", "z", "mag",
+            "x_inner", "y_inner", "z_inner", "mag_inner",
+            "x_outer", "y_outer", "z_outer", "mag_outer",
+        ]
         if (params.alignment_method in ("peak", "local_peak")) and all(("frame_aligned" in df.columns) for df in mounted) and all(("frame_aligned" in df.columns) for df in reseated):
-            m_stats, _ = compute_group_stats_aligned(mounted, cols, x_col="frame_aligned")
-            r_stats, _ = compute_group_stats_aligned(reseated, cols, x_col="frame_aligned")
+            m_stats, _ = compute_group_stats_aligned(mounted, all_cols, x_col="frame_aligned")
+            r_stats, _ = compute_group_stats_aligned(reseated, all_cols, x_col="frame_aligned")
         else:
-            m_stats = compute_group_stats(mounted, cols)
-            r_stats = compute_group_stats(reseated, cols)
+            m_stats = compute_group_stats(mounted, all_cols)
+            r_stats = compute_group_stats(reseated, all_cols)
         # Truth group stats if available (compute per set)
         truth_available_m = bool(mounted) and all(c in mounted[0].columns for c in ("bx", "by", "bz"))
         truth_available_r = bool(reseated) and all(c in reseated[0].columns for c in ("bx", "by", "bz"))
@@ -560,6 +684,33 @@ def plot_overlaid(
                 label="Reseated ±1 SD",
             )
             reseated_bands.append(r_band)
+            # Inner means/bands if present
+            inner_col = f"{col}_inner" if col != "mag" else "mag_inner"
+            if inner_col in m_stats and inner_col in r_stats:
+                idx_i = m_stats[inner_col].index.to_numpy() if hasattr(m_stats[inner_col], 'index') else np.arange(len(m_stats[inner_col]["mean"]))
+                m_i_line, = ax.plot(idx_i, m_stats[inner_col]["mean"], color="#1f77b4", linewidth=2.0, linestyle="--")
+                inner_mounted_mean_lines.append(m_i_line)
+                m_i_band = ax.fill_between(idx_i, m_stats[inner_col]["mean"] - m_stats[inner_col]["std"], m_stats[inner_col]["mean"] + m_stats[inner_col]["std"], color="#1f77b4", alpha=0.12)
+                inner_mounted_bands.append(m_i_band)
+                idx_i = r_stats[inner_col].index.to_numpy() if hasattr(r_stats[inner_col], 'index') else np.arange(len(r_stats[inner_col]["mean"]))
+                r_i_line, = ax.plot(idx_i, r_stats[inner_col]["mean"], color="#d62728", linewidth=2.0, linestyle="--")
+                inner_reseated_mean_lines.append(r_i_line)
+                r_i_band = ax.fill_between(idx_i, r_stats[inner_col]["mean"] - r_stats[inner_col]["std"], r_stats[inner_col]["mean"] + r_stats[inner_col]["std"], color="#d62728", alpha=0.12)
+                inner_reseated_bands.append(r_i_band)
+            # Outer means/bands if present
+            outer_col = f"{col}_outer" if col != "mag" else "mag_outer"
+            if outer_col in m_stats and outer_col in r_stats:
+                idx_o = m_stats[outer_col].index.to_numpy() if hasattr(m_stats[outer_col], 'index') else np.arange(len(m_stats[outer_col]["mean"]))
+                m_o_line, = ax.plot(idx_o, m_stats[outer_col]["mean"], color="#1f77b4", linewidth=2.0, linestyle=":")
+                outer_mounted_mean_lines.append(m_o_line)
+                m_o_band = ax.fill_between(idx_o, m_stats[outer_col]["mean"] - m_stats[outer_col]["std"], m_stats[outer_col]["mean"] + m_stats[outer_col]["std"], color="#1f77b4", alpha=0.10)
+                outer_mounted_bands.append(m_o_band)
+                idx_o = r_stats[outer_col].index.to_numpy() if hasattr(r_stats[outer_col], 'index') else np.arange(len(r_stats[outer_col]["mean"]))
+                r_o_line, = ax.plot(idx_o, r_stats[outer_col]["mean"], color="#d62728", linewidth=2.0, linestyle=":")
+                outer_reseated_mean_lines.append(r_o_line)
+                r_o_band = ax.fill_between(idx_o, r_stats[outer_col]["mean"] - r_stats[outer_col]["std"], r_stats[outer_col]["mean"] + r_stats[outer_col]["std"], color="#d62728", alpha=0.10)
+                outer_reseated_bands.append(r_o_band)
+
             ax.legend(loc="upper right", fontsize=8)
 
             # Truth mean ± SD overlays per set if available
@@ -590,65 +741,165 @@ def plot_overlaid(
                 )
                 truth_reseated_bands.append(t_r_band)
 
-    # Add interactive toggles for runs and means
-    fig.subplots_adjust(right=0.85)
-    rax = fig.add_axes([0.87, 0.35, 0.12, 0.3])  # [left, bottom, width, height]
-    labels = []
-    artists_map: dict = {}
-    actives: list = []
+    # Add interactive toggles for runs and means, split into sections
+    fig.subplots_adjust(right=0.82, wspace=0.25, hspace=0.28)
 
-    if mounted_lines:
-        labels.append("Mounted runs")
-        artists_map["Mounted runs"] = mounted_lines
-        actives.append(True)
-    if reseated_lines:
-        labels.append("Reseated runs")
-        artists_map["Reseated runs"] = reseated_lines
-        actives.append(True)
-    if mounted_mean_lines or mounted_bands:
-        labels.append("Mounted mean±SD")
-        artists_map["Mounted mean±SD"] = mounted_mean_lines + mounted_bands
-        actives.append(True)
-    if reseated_mean_lines or reseated_bands:
-        labels.append("Reseated mean±SD")
-        artists_map["Reseated mean±SD"] = reseated_mean_lines + reseated_bands
-        actives.append(True)
+    # Truth section (bottom)
+    t_ax = fig.add_axes([0.86, 0.06, 0.12, 0.24])
+    t_labels = []
+    t_artists_map: dict = {}
+    t_actives: list = []
     if truth_mounted_lines:
-        labels.append("Mounted truth runs")
-        artists_map["Mounted truth runs"] = truth_mounted_lines
-        actives.append(True)
-    if truth_reseated_lines:
-        labels.append("Reseated truth runs")
-        artists_map["Reseated truth runs"] = truth_reseated_lines
-        actives.append(True)
+        t_labels.append("Mounted truth runs")
+        t_artists_map["Mounted truth runs"] = truth_mounted_lines
+        t_actives.append(True)
     if truth_mounted_mean_lines or truth_mounted_bands:
-        labels.append("Mounted truth mean±SD")
-        artists_map["Mounted truth mean±SD"] = truth_mounted_mean_lines + truth_mounted_bands
-        actives.append(True)
+        t_labels.append("Mounted truth mean±SD")
+        t_artists_map["Mounted truth mean±SD"] = truth_mounted_mean_lines + truth_mounted_bands
+        t_actives.append(True)
+    if truth_reseated_lines:
+        t_labels.append("Reseated truth runs")
+        t_artists_map["Reseated truth runs"] = truth_reseated_lines
+        t_actives.append(True)
     if truth_reseated_mean_lines or truth_reseated_bands:
-        labels.append("Reseated truth mean±SD")
-        artists_map["Reseated truth mean±SD"] = truth_reseated_mean_lines + truth_reseated_bands
-        actives.append(True)
+        t_labels.append("Reseated truth mean±SD")
+        t_artists_map["Reseated truth mean±SD"] = truth_reseated_mean_lines + truth_reseated_bands
+        t_actives.append(True)
+    if t_labels:
+        t_check = CheckButtons(t_ax, labels=t_labels, actives=t_actives)
+        try:
+            for txt in t_check.labels:
+                txt.set_fontsize(10)
+        except Exception:
+            pass
+        try:
+            t_ax.set_title("Truth", fontsize=10, pad=2)
+        except Exception:
+            pass
 
-    if labels:
-        check = CheckButtons(rax, labels=labels, actives=actives)
-
-        def on_toggle(label: str) -> None:
-            # Set visibility based on checkbox state
+        def on_toggle_t(label: str) -> None:
             try:
-                idx = labels.index(label)
+                idx = t_labels.index(label)
             except ValueError:
                 return
-            visible = check.get_status()[idx]
-            for artist in artists_map.get(label, []):
+            visible = t_check.get_status()[idx]
+            for artist in t_artists_map.get(label, []):
                 artist.set_visible(visible)
             for a in axes.ravel():
                 a.figure.canvas.draw_idle()
 
-        check.on_clicked(on_toggle)
+        t_check.on_clicked(on_toggle_t)
+
+    # Mounted section (below hover)
+    m_ax = fig.add_axes([0.86, 0.60, 0.12, 0.24])
+    m_labels = []
+    m_artists_map: dict = {}
+    m_actives: list = []
+    if mounted_lines:
+        m_labels.append("Sum lines")
+        m_artists_map["Sum lines"] = mounted_lines
+        m_actives.append(True)
+    if mounted_mean_lines or mounted_bands:
+        m_labels.append("Sum mean±SD")
+        m_artists_map["Sum mean±SD"] = mounted_mean_lines + mounted_bands
+        m_actives.append(True)
+    if inner_mounted_lines:
+        m_labels.append("Inner lines")
+        m_artists_map["Inner lines"] = inner_mounted_lines
+        m_actives.append(True)
+    if inner_mounted_mean_lines or inner_mounted_bands:
+        m_labels.append("Inner mean±SD")
+        m_artists_map["Inner mean±SD"] = inner_mounted_mean_lines + inner_mounted_bands
+        m_actives.append(True)
+    if outer_mounted_lines:
+        m_labels.append("Outer lines")
+        m_artists_map["Outer lines"] = outer_mounted_lines
+        m_actives.append(True)
+    if outer_mounted_mean_lines or outer_mounted_bands:
+        m_labels.append("Outer mean±SD")
+        m_artists_map["Outer mean±SD"] = outer_mounted_mean_lines + outer_mounted_bands
+        m_actives.append(True)
+    if m_labels:
+        m_check = CheckButtons(m_ax, labels=m_labels, actives=m_actives)
+        try:
+            for txt in m_check.labels:
+                txt.set_fontsize(10)
+        except Exception:
+            pass
+        try:
+            m_ax.set_title("Mounted", fontsize=10, pad=2)
+        except Exception:
+            pass
+
+        def on_toggle_m(label: str) -> None:
+            try:
+                idx = m_labels.index(label)
+            except ValueError:
+                return
+            visible = m_check.get_status()[idx]
+            for artist in m_artists_map.get(label, []):
+                artist.set_visible(visible)
+            for a in axes.ravel():
+                a.figure.canvas.draw_idle()
+
+        m_check.on_clicked(on_toggle_m)
+
+    # Reseated section (between mounted and truth)
+    r_ax = fig.add_axes([0.86, 0.33, 0.12, 0.24])
+    r_labels = []
+    r_artists_map: dict = {}
+    r_actives: list = []
+    if reseated_lines:
+        r_labels.append("Sum lines")
+        r_artists_map["Sum lines"] = reseated_lines
+        r_actives.append(True)
+    if reseated_mean_lines or reseated_bands:
+        r_labels.append("Sum mean±SD")
+        r_artists_map["Sum mean±SD"] = reseated_mean_lines + reseated_bands
+        r_actives.append(True)
+    if inner_reseated_lines:
+        r_labels.append("Inner lines")
+        r_artists_map["Inner lines"] = inner_reseated_lines
+        r_actives.append(True)
+    if inner_reseated_mean_lines or inner_reseated_bands:
+        r_labels.append("Inner mean±SD")
+        r_artists_map["Inner mean±SD"] = inner_reseated_mean_lines + inner_reseated_bands
+        r_actives.append(True)
+    if outer_reseated_lines:
+        r_labels.append("Outer lines")
+        r_artists_map["Outer lines"] = outer_reseated_lines
+        r_actives.append(True)
+    if outer_reseated_mean_lines or outer_reseated_bands:
+        r_labels.append("Outer mean±SD")
+        r_artists_map["Outer mean±SD"] = outer_reseated_mean_lines + outer_reseated_bands
+        r_actives.append(True)
+    if r_labels:
+        r_check = CheckButtons(r_ax, labels=r_labels, actives=r_actives)
+        try:
+            for txt in r_check.labels:
+                txt.set_fontsize(10)
+        except Exception:
+            pass
+        try:
+            r_ax.set_title("Reseated", fontsize=10, pad=2)
+        except Exception:
+            pass
+
+        def on_toggle_r(label: str) -> None:
+            try:
+                idx = r_labels.index(label)
+            except ValueError:
+                return
+            visible = r_check.get_status()[idx]
+            for artist in r_artists_map.get(label, []):
+                artist.set_visible(visible)
+            for a in axes.ravel():
+                a.figure.canvas.draw_idle()
+
+        r_check.on_clicked(on_toggle_r)
 
     # Hover tooltips showing source filename for single-run lines
-    run_lines = mounted_lines + reseated_lines + truth_mounted_lines + truth_reseated_lines
+    run_lines = mounted_lines + reseated_lines + inner_mounted_lines + inner_reseated_lines + outer_mounted_lines + outer_reseated_lines + truth_mounted_lines + truth_reseated_lines
     if run_lines:
         cursor = mplcursors.cursor(run_lines, hover=True)
 
@@ -661,18 +912,31 @@ def plot_overlaid(
             sel.annotation.set_text(str(source))
 
         # Separate hover toggle above the line toggles (not in the same box)
-        hax = fig.add_axes([0.87, 0.70, 0.12, 0.08])
+        hax = fig.add_axes([0.86, 0.90, 0.12, 0.08])
         hover_check = CheckButtons(hax, labels=["Hover filenames"], actives=[True])
+        try:
+            for txt in hover_check.labels:
+                txt.set_fontsize(10)
+        except Exception:
+            pass
 
         def on_hover_toggle(_label: str) -> None:
             enabled = hover_check.get_status()[0]
             try:
                 cursor.enabled = enabled
                 if not enabled:
-                    # Hide any existing annotations when disabling
+                    # Hide any existing annotations when disabling (robust across mplcursors versions)
                     try:
-                        for ann in list(cursor.annotations):
+                        for ann in list(getattr(cursor, "annotations", [])):
                             ann.set_visible(False)
+                    except Exception:
+                        pass
+                    try:
+                        for sel in list(getattr(cursor, "selections", [])):
+                            try:
+                                sel.annotation.set_visible(False)
+                            except Exception:
+                                pass
                     except Exception:
                         pass
                 for a in axes.ravel():
