@@ -8,6 +8,15 @@ import seaborn as sns
 import mplcursors
 from matplotlib.widgets import CheckButtons, Button
 
+# Ensure parent directory (scripts) is on path for overlay import
+import sys
+from pathlib import Path
+_THIS_DIR = Path(__file__).resolve().parent
+_PARENT_DIR = _THIS_DIR.parent
+if str(_PARENT_DIR) not in sys.path:
+    sys.path.insert(0, str(_PARENT_DIR))
+
+# Reuse pipeline helpers and configuration from the overlay module
 from overlay_mounted_vs_reseated import (
     Paths,
     Params,
@@ -23,20 +32,20 @@ from overlay_mounted_vs_reseated import (
 )
 
 
-def _pair_for_axis_bz_x(axis: str) -> Tuple[str, str]:
-    # measured axis stays the same; truth axis forced to bz for x-axis
+def _pair_for_axis(axis: str) -> Tuple[str, str]:
+    # measured, truth
     if axis == "x":
-        return "x", "bz"
+        return "x", "bx"
     if axis == "y":
-        return "y", "bz"
+        return "y", "by"
     if axis == "z":
         return "z", "bz"
     if axis == "mag":
-        return "mag", "bz"
-    return axis, "bz"
+        return "mag", "bmag"
+    return axis, axis
 
 
-def plot_measured_vs_truth_bz_x(
+def plot_measured_vs_truth(
     mounted: List[pd.DataFrame],
     reseated: List[pd.DataFrame],
     params: Params,
@@ -48,7 +57,7 @@ def plot_measured_vs_truth_bz_x(
     # Track CheckButtons groups for global control
     check_groups: list = []
 
-    # Artists grouped by variant
+    # Sum variant artists
     mounted_lines_sum: list = []
     reseated_lines_sum: list = []
     mounted_dots_sum: list = []
@@ -57,7 +66,7 @@ def plot_measured_vs_truth_bz_x(
     reseated_mean_lines_sum: list = []
     mounted_bands_sum: list = []
     reseated_bands_sum: list = []
-
+    # Inner variant artists
     mounted_lines_inner: list = []
     reseated_lines_inner: list = []
     mounted_dots_inner: list = []
@@ -66,7 +75,7 @@ def plot_measured_vs_truth_bz_x(
     reseated_mean_lines_inner: list = []
     mounted_bands_inner: list = []
     reseated_bands_inner: list = []
-
+    # Outer variant artists
     mounted_lines_outer: list = []
     reseated_lines_outer: list = []
     mounted_dots_outer: list = []
@@ -77,19 +86,20 @@ def plot_measured_vs_truth_bz_x(
     reseated_bands_outer: list = []
 
     for col in cols:
-        meas_col, truth_col = _pair_for_axis_bz_x(col)
+        meas_col, truth_col = _pair_for_axis(col)
         r, c = axes_map[col]
         ax = axes[r][c]
-        ax.set_title(f"{meas_col.upper()} vs BZ")
-        ax.set_xlabel("BZ")
+        ax.set_title(f"{meas_col.upper()} vs {truth_col.upper()}")
+        ax.set_xlabel(truth_col.upper())
         ax.set_ylabel(meas_col.upper())
 
-        tx_min = None
-        tx_max = None
-        my_min = None
-        my_max = None
+        # Track per-axis ranges separately for better fit
+        tx_min = None  # truth x-axis min
+        tx_max = None  # truth x-axis max
+        my_min = None  # measured y-axis min
+        my_max = None  # measured y-axis max
 
-        # Binning accumulators per variant
+        # Collect for mean bands (per variant)
         mounted_pairs_x_sum: list = []
         mounted_pairs_y_sum: list = []
         reseated_pairs_x_sum: list = []
@@ -103,13 +113,17 @@ def plot_measured_vs_truth_bz_x(
         reseated_pairs_x_outer: list = []
         reseated_pairs_y_outer: list = []
 
-        # Mounted SUM
+        # Plot mounted (sum; as lines sorted by bmag) and optional dots (raw)
         for df in mounted:
             if meas_col not in df.columns or truth_col not in df.columns:
                 continue
             x_truth = df[truth_col].to_numpy()
             y_meas = df[meas_col].to_numpy()
-            sort_idx = np.argsort(df["bz"].to_numpy()) if "bz" in df.columns else np.argsort(x_truth)
+            # Sort by bmag if present, else by truth
+            if "bmag" in df.columns:
+                sort_idx = np.argsort(df["bmag"].to_numpy())
+            else:
+                sort_idx = np.argsort(x_truth)
             n = min(len(x_truth), len(y_meas))
             if n <= 0:
                 continue
@@ -122,6 +136,7 @@ def plot_measured_vs_truth_bz_x(
             except Exception:
                 line._source_path = ""
             mounted_lines_sum.append(line)
+            # raw dots (default hidden)
             dx = x_truth[:n].astype(float)
             dy = y_meas[:n].astype(float)
             sc = ax.scatter(dx, dy, s=4, alpha=0.25, color="#1f77b4")
@@ -131,6 +146,7 @@ def plot_measured_vs_truth_bz_x(
                 sc._source_path = ""
             sc.set_visible(False)
             mounted_dots_sum.append(sc)
+            # accumulate for mean bands
             mounted_pairs_x_sum.append(x_truth.astype(float)[:n])
             mounted_pairs_y_sum.append(y_meas.astype(float)[:n])
             cur_tx_min = float(np.nanmin(x_arr))
@@ -142,14 +158,14 @@ def plot_measured_vs_truth_bz_x(
             my_min = cur_my_min if my_min is None else min(my_min, cur_my_min)
             my_max = cur_my_max if my_max is None else max(my_max, cur_my_max)
 
-        # Mounted INNER
+        # Mounted INNER variant
         meas_col_inner = f"{meas_col}_inner" if meas_col != "mag" else "mag_inner"
         for df in mounted:
             if meas_col_inner not in df.columns or truth_col not in df.columns:
                 continue
             x_truth = df[truth_col].to_numpy()
             y_meas = df[meas_col_inner].to_numpy()
-            sort_idx = np.argsort(df["bz"].to_numpy()) if "bz" in df.columns else np.argsort(x_truth)
+            sort_idx = np.argsort(df["bmag"].to_numpy()) if "bmag" in df.columns else np.argsort(x_truth)
             n = min(len(x_truth), len(y_meas))
             if n <= 0:
                 continue
@@ -174,14 +190,14 @@ def plot_measured_vs_truth_bz_x(
             mounted_pairs_x_inner.append(x_truth.astype(float)[:n])
             mounted_pairs_y_inner.append(y_meas.astype(float)[:n])
 
-        # Mounted OUTER
+        # Mounted OUTER variant
         meas_col_outer = f"{meas_col}_outer" if meas_col != "mag" else "mag_outer"
         for df in mounted:
             if meas_col_outer not in df.columns or truth_col not in df.columns:
                 continue
             x_truth = df[truth_col].to_numpy()
             y_meas = df[meas_col_outer].to_numpy()
-            sort_idx = np.argsort(df["bz"].to_numpy()) if "bz" in df.columns else np.argsort(x_truth)
+            sort_idx = np.argsort(df["bmag"].to_numpy()) if "bmag" in df.columns else np.argsort(x_truth)
             n = min(len(x_truth), len(y_meas))
             if n <= 0:
                 continue
@@ -206,13 +222,16 @@ def plot_measured_vs_truth_bz_x(
             mounted_pairs_x_outer.append(x_truth.astype(float)[:n])
             mounted_pairs_y_outer.append(y_meas.astype(float)[:n])
 
-        # Reseated SUM
+        # Plot reseated (sum)
         for df in reseated:
             if meas_col not in df.columns or truth_col not in df.columns:
                 continue
             x_truth = df[truth_col].to_numpy()
             y_meas = df[meas_col].to_numpy()
-            sort_idx = np.argsort(df["bz"].to_numpy()) if "bz" in df.columns else np.argsort(x_truth)
+            if "bmag" in df.columns:
+                sort_idx = np.argsort(df["bmag"].to_numpy())
+            else:
+                sort_idx = np.argsort(x_truth)
             n = min(len(x_truth), len(y_meas))
             if n <= 0:
                 continue
@@ -225,6 +244,7 @@ def plot_measured_vs_truth_bz_x(
             except Exception:
                 line._source_path = ""
             reseated_lines_sum.append(line)
+            # raw dots (default hidden)
             dx = x_truth[:n].astype(float)
             dy = y_meas[:n].astype(float)
             sc = ax.scatter(dx, dy, s=4, alpha=0.25, color="#d62728")
@@ -251,7 +271,7 @@ def plot_measured_vs_truth_bz_x(
                 continue
             x_truth = df[truth_col].to_numpy()
             y_meas = df[meas_col_inner].to_numpy()
-            sort_idx = np.argsort(df["bz"].to_numpy()) if "bz" in df.columns else np.argsort(x_truth)
+            sort_idx = np.argsort(df["bmag"].to_numpy()) if "bmag" in df.columns else np.argsort(x_truth)
             n = min(len(x_truth), len(y_meas))
             if n <= 0:
                 continue
@@ -282,7 +302,7 @@ def plot_measured_vs_truth_bz_x(
                 continue
             x_truth = df[truth_col].to_numpy()
             y_meas = df[meas_col_outer].to_numpy()
-            sort_idx = np.argsort(df["bz"].to_numpy()) if "bz" in df.columns else np.argsort(x_truth)
+            sort_idx = np.argsort(df["bmag"].to_numpy()) if "bmag" in df.columns else np.argsort(x_truth)
             n = min(len(x_truth), len(y_meas))
             if n <= 0:
                 continue
@@ -307,7 +327,7 @@ def plot_measured_vs_truth_bz_x(
             reseated_pairs_x_outer.append(x_truth.astype(float)[:n])
             reseated_pairs_y_outer.append(y_meas.astype(float)[:n])
 
-        # Limits with padding
+        # Axis limits with padding, no unity line, no forced aspect
         if tx_min is None or tx_max is None:
             tx_min, tx_max = -1.0, 1.0
         if my_min is None or my_max is None:
@@ -318,14 +338,19 @@ def plot_measured_vs_truth_bz_x(
             my_max = my_min + 1.0
         pad_x = 0.05 * (tx_max - tx_min)
         pad_y = 0.05 * (my_max - my_min)
-        ax.set_xlim(tx_min - pad_x, tx_max + pad_x)
-        ax.set_ylim(my_min - pad_y, my_max + pad_y)
+        x_lo = tx_min - pad_x
+        x_hi = tx_max + pad_x
+        y_lo = my_min - pad_y
+        y_hi = my_max + pad_y
+        ax.set_xlim(x_lo, x_hi)
+        ax.set_ylim(y_lo, y_hi)
 
-        # Per-set mean ± SD bands over bz bins (sum only)
+        # Per-set mean ± SD bands over truth bins for each variant
         try:
             n_bins = 60
             edges = np.linspace(tx_min, tx_max, n_bins + 1)
             centers = 0.5 * (edges[:-1] + edges[1:])
+            # Mounted sum stats
             if mounted_pairs_x_sum and mounted_pairs_y_sum:
                 mx = np.concatenate(mounted_pairs_x_sum)
                 my = np.concatenate(mounted_pairs_y_sum)
@@ -341,6 +366,7 @@ def plot_measured_vs_truth_bz_x(
                 mounted_mean_lines_sum.append(m_line)
                 m_band = ax.fill_between(centers, m_means - m_stds, m_means + m_stds, color="#1f77b4", alpha=0.15)
                 mounted_bands_sum.append(m_band)
+            # Reseated sum stats
             if reseated_pairs_x_sum and reseated_pairs_y_sum:
                 rx = np.concatenate(reseated_pairs_x_sum)
                 ry = np.concatenate(reseated_pairs_y_sum)
@@ -356,13 +382,79 @@ def plot_measured_vs_truth_bz_x(
                 reseated_mean_lines_sum.append(r_line)
                 r_band = ax.fill_between(centers, r_means - r_stds, r_means + r_stds, color="#d62728", alpha=0.15)
                 reseated_bands_sum.append(r_band)
+
+            # Mounted inner stats
+            if mounted_pairs_x_inner and mounted_pairs_y_inner:
+                mx = np.concatenate(mounted_pairs_x_inner)
+                my = np.concatenate(mounted_pairs_y_inner)
+                m_means = np.full_like(centers, np.nan, dtype=float)
+                m_stds = np.full_like(centers, np.nan, dtype=float)
+                for i in range(n_bins):
+                    mask = (mx >= edges[i]) & (mx < edges[i + 1])
+                    vals = my[mask]
+                    if vals.size:
+                        m_means[i] = float(np.nanmean(vals))
+                        m_stds[i] = float(np.nanstd(vals))
+                m_line, = ax.plot(centers, m_means, color="#1f77b4", linewidth=2.0, linestyle="--")
+                mounted_mean_lines_inner.append(m_line)
+                m_band = ax.fill_between(centers, m_means - m_stds, m_means + m_stds, color="#1f77b4", alpha=0.12)
+                mounted_bands_inner.append(m_band)
+            # Reseated inner stats
+            if reseated_pairs_x_inner and reseated_pairs_y_inner:
+                rx = np.concatenate(reseated_pairs_x_inner)
+                ry = np.concatenate(reseated_pairs_y_inner)
+                r_means = np.full_like(centers, np.nan, dtype=float)
+                r_stds = np.full_like(centers, np.nan, dtype=float)
+                for i in range(n_bins):
+                    mask = (rx >= edges[i]) & (rx < edges[i + 1])
+                    vals = ry[mask]
+                    if vals.size:
+                        r_means[i] = float(np.nanmean(vals))
+                        r_stds[i] = float(np.nanstd(vals))
+                r_line, = ax.plot(centers, r_means, color="#d62728", linewidth=2.0, linestyle="--")
+                reseated_mean_lines_inner.append(r_line)
+                r_band = ax.fill_between(centers, r_means - r_stds, r_means + r_stds, color="#d62728", alpha=0.12)
+                reseated_bands_inner.append(r_band)
+
+            # Mounted outer stats
+            if mounted_pairs_x_outer and mounted_pairs_y_outer:
+                mx = np.concatenate(mounted_pairs_x_outer)
+                my = np.concatenate(mounted_pairs_y_outer)
+                m_means = np.full_like(centers, np.nan, dtype=float)
+                m_stds = np.full_like(centers, np.nan, dtype=float)
+                for i in range(n_bins):
+                    mask = (mx >= edges[i]) & (mx < edges[i + 1])
+                    vals = my[mask]
+                    if vals.size:
+                        m_means[i] = float(np.nanmean(vals))
+                        m_stds[i] = float(np.nanstd(vals))
+                m_line, = ax.plot(centers, m_means, color="#1f77b4", linewidth=2.0, linestyle=":")
+                mounted_mean_lines_outer.append(m_line)
+                m_band = ax.fill_between(centers, m_means - m_stds, m_means + m_stds, color="#1f77b4", alpha=0.10)
+                mounted_bands_outer.append(m_band)
+            # Reseated outer stats
+            if reseated_pairs_x_outer and reseated_pairs_y_outer:
+                rx = np.concatenate(reseated_pairs_x_outer)
+                ry = np.concatenate(reseated_pairs_y_outer)
+                r_means = np.full_like(centers, np.nan, dtype=float)
+                r_stds = np.full_like(centers, np.nan, dtype=float)
+                for i in range(n_bins):
+                    mask = (rx >= edges[i]) & (rx < edges[i + 1])
+                    vals = ry[mask]
+                    if vals.size:
+                        r_means[i] = float(np.nanmean(vals))
+                        r_stds[i] = float(np.nanstd(vals))
+                r_line, = ax.plot(centers, r_means, color="#d62728", linewidth=2.0, linestyle=":")
+                reseated_mean_lines_outer.append(r_line)
+                r_band = ax.fill_between(centers, r_means - r_stds, r_means + r_stds, color="#d62728", alpha=0.10)
+                reseated_bands_outer.append(r_band)
         except Exception:
             pass
 
-    # Toggles with panels (defaults ON)
+    # Interactive toggles - panel layout like overlay script
     fig.subplots_adjust(right=0.82, wspace=0.25, hspace=0.28)
 
-    # Mounted panel (bottom)
+    # Mounted panel
     m_ax = fig.add_axes([0.86, 0.20, 0.12, 0.22])
     m_labels = []
     m_map = {}
@@ -432,7 +524,7 @@ def plot_measured_vs_truth_bz_x(
         except Exception:
             pass
 
-    # Reseated panel (middle)
+    # Reseated panel
     r_ax = fig.add_axes([0.86, 0.45, 0.12, 0.22])
     r_labels = []
     r_map = {}
@@ -502,7 +594,7 @@ def plot_measured_vs_truth_bz_x(
         except Exception:
             pass
 
-    # Hover
+    # Hover tooltips for lines and dots
     run_artists = (
         mounted_lines_sum + mounted_lines_inner + mounted_lines_outer +
         reseated_lines_sum + reseated_lines_inner + reseated_lines_outer +
@@ -544,6 +636,8 @@ def plot_measured_vs_truth_bz_x(
             except Exception:
                 pass
 
+        hover_check.on_clicked(on_hover_toggle)
+
     # Global "All OFF" button to disable all plot toggles at once
     try:
         all_off_ax = fig.add_axes([0.86, 0.10, 0.12, 0.05])
@@ -571,7 +665,7 @@ def plot_measured_vs_truth_bz_x(
     except Exception:
         pass
 
-    fig.suptitle("Measured vs Truth (X-axis: BZ): Mounted (blue) vs Reseated (red)")
+    fig.suptitle("Measured vs Truth: Mounted (blue) vs Reseated (red)")
     plt.show()
 
 
@@ -585,7 +679,7 @@ def main() -> None:
     mounted_prep = [preprocess_signal(df, params) for df in mounted_raw]
     reseated_prep = [preprocess_signal(df, params) for df in reseated_raw]
 
-    # Alignment and rotation like the original script
+    # Align runs (same technique as analysis script)
     if params.alignment_method == "peak":
         mounted_aligned = align_group_by_peak(mounted_prep, params, signal="mag")
         reseated_aligned = align_group_by_peak(reseated_prep, params, signal="mag")
@@ -596,49 +690,15 @@ def main() -> None:
         mounted_aligned = [align_run(df, params) for df in mounted_prep]
         reseated_aligned = [align_run(df, params) for df in reseated_prep]
 
+    # Rotate measured axes after alignment
     mounted_rot = rotate_group_about_z(mounted_aligned, params.rotation_deg_z)
     reseated_rot = rotate_group_about_z(reseated_aligned, params.rotation_deg_z)
 
+    # Inter-set alignment by first local 'x' peak threshold window
     mounted_adj, reseated_adj = align_sets_by_first_x_peak(mounted_rot, reseated_rot, params)
 
-    # Trim by truth z slope (same as original)
-    def trim_by_truth_z_slope(m_list: List[pd.DataFrame], r_list: List[pd.DataFrame], slope_threshold: float = -1.0, smooth_window: int = 10) -> tuple[List[pd.DataFrame], List[pd.DataFrame]]:
-        try:
-            combined: List[pd.DataFrame] = []
-            for df in (m_list + r_list):
-                if df is not None and ("frame_aligned" in df.columns) and ("bz" in df.columns):
-                    combined.append(df[["frame_aligned", "bz"]].copy())
-            if not combined:
-                return m_list, r_list
-            stats, grid = compute_group_stats_aligned(combined, ["bz"], x_col="frame_aligned")
-            if not stats or grid.size == 0 or "bz" not in stats:
-                return m_list, r_list
-            z_mean = stats["bz"]["mean"].to_numpy()
-            z_smooth = smooth_for_alignment(z_mean, smooth_window)
-            slopes = np.diff(z_smooth)
-            idx = None
-            for i in range(slopes.size):
-                if np.isfinite(slopes[i]) and slopes[i] <= slope_threshold:
-                    idx = i + 1
-                    break
-            if idx is None:
-                return m_list, r_list
-            cutoff_frame = int(grid[idx])
-            def cut_list(lst: List[pd.DataFrame]) -> List[pd.DataFrame]:
-                out: List[pd.DataFrame] = []
-                for d in lst:
-                    if "frame_aligned" in d.columns:
-                        out.append(d.loc[d["frame_aligned"] <= cutoff_frame].reset_index(drop=True).copy())
-                    else:
-                        out.append(d)
-                return out
-            return cut_list(m_list), cut_list(r_list)
-        except Exception:
-            return m_list, r_list
-
-    mounted_trim, reseated_trim = trim_by_truth_z_slope(mounted_adj, reseated_adj)
-
-    plot_measured_vs_truth_bz_x(mounted_trim, reseated_trim, params)
+    # No trimming; keep full windows
+    plot_measured_vs_truth(mounted_adj, reseated_adj, params)
 
 
 if __name__ == "__main__":

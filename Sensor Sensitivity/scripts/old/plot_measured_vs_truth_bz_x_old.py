@@ -8,6 +8,14 @@ import seaborn as sns
 import mplcursors
 from matplotlib.widgets import CheckButtons, Button
 
+# Ensure parent directory (scripts) is on path for overlay import
+import sys
+from pathlib import Path
+_THIS_DIR = Path(__file__).resolve().parent
+_PARENT_DIR = _THIS_DIR.parent
+if str(_PARENT_DIR) not in sys.path:
+    sys.path.insert(0, str(_PARENT_DIR))
+
 from overlay_mounted_vs_reseated import (
     Paths,
     Params,
@@ -45,7 +53,7 @@ def plot_measured_vs_truth_bz_x(
     cols = ["x", "y", "z", "mag"]
     fig, axes = plt.subplots(2, 2, figsize=(16, 9))
     axes_map = {"x": (0, 0), "y": (0, 1), "z": (1, 0), "mag": (1, 1)}
-    # Track CheckButtons groups for global control
+    # Track CheckButtons groups
     check_groups: list = []
 
     # Artists grouped by variant
@@ -601,44 +609,8 @@ def main() -> None:
 
     mounted_adj, reseated_adj = align_sets_by_first_x_peak(mounted_rot, reseated_rot, params)
 
-    # Trim by truth z slope (same as original)
-    def trim_by_truth_z_slope(m_list: List[pd.DataFrame], r_list: List[pd.DataFrame], slope_threshold: float = -1.0, smooth_window: int = 10) -> tuple[List[pd.DataFrame], List[pd.DataFrame]]:
-        try:
-            combined: List[pd.DataFrame] = []
-            for df in (m_list + r_list):
-                if df is not None and ("frame_aligned" in df.columns) and ("bz" in df.columns):
-                    combined.append(df[["frame_aligned", "bz"]].copy())
-            if not combined:
-                return m_list, r_list
-            stats, grid = compute_group_stats_aligned(combined, ["bz"], x_col="frame_aligned")
-            if not stats or grid.size == 0 or "bz" not in stats:
-                return m_list, r_list
-            z_mean = stats["bz"]["mean"].to_numpy()
-            z_smooth = smooth_for_alignment(z_mean, smooth_window)
-            slopes = np.diff(z_smooth)
-            idx = None
-            for i in range(slopes.size):
-                if np.isfinite(slopes[i]) and slopes[i] <= slope_threshold:
-                    idx = i + 1
-                    break
-            if idx is None:
-                return m_list, r_list
-            cutoff_frame = int(grid[idx])
-            def cut_list(lst: List[pd.DataFrame]) -> List[pd.DataFrame]:
-                out: List[pd.DataFrame] = []
-                for d in lst:
-                    if "frame_aligned" in d.columns:
-                        out.append(d.loc[d["frame_aligned"] <= cutoff_frame].reset_index(drop=True).copy())
-                    else:
-                        out.append(d)
-                return out
-            return cut_list(m_list), cut_list(r_list)
-        except Exception:
-            return m_list, r_list
-
-    mounted_trim, reseated_trim = trim_by_truth_z_slope(mounted_adj, reseated_adj)
-
-    plot_measured_vs_truth_bz_x(mounted_trim, reseated_trim, params)
+    # No trimming; keep full windows
+    plot_measured_vs_truth_bz_x(mounted_adj, reseated_adj, params)
 
 
 if __name__ == "__main__":

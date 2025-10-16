@@ -6,7 +6,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import mplcursors
-from matplotlib.widgets import CheckButtons
+from matplotlib.widgets import CheckButtons, Button
 
 # Reuse pipeline helpers and configuration from the overlay module
 from overlay_mounted_vs_reseated import (
@@ -46,6 +46,8 @@ def plot_measured_vs_truth(
     cols = ["x", "y", "z", "mag"]
     fig, axes = plt.subplots(2, 2, figsize=(16, 9))
     axes_map = {"x": (0, 0), "y": (0, 1), "z": (1, 0), "mag": (1, 1)}
+    # Collect CheckButtons groups for global control
+    check_groups: list = []
 
     # Sum variant artists
     mounted_lines_sum: list = []
@@ -509,6 +511,10 @@ def plot_measured_vs_truth(
                 a.figure.canvas.draw_idle()
 
         m_check.on_clicked(on_toggle_m)
+        try:
+            check_groups.append(m_check)
+        except Exception:
+            pass
 
     # Reseated panel
     r_ax = fig.add_axes([0.86, 0.45, 0.12, 0.22])
@@ -575,6 +581,10 @@ def plot_measured_vs_truth(
                 a.figure.canvas.draw_idle()
 
         r_check.on_clicked(on_toggle_r)
+        try:
+            check_groups.append(r_check)
+        except Exception:
+            pass
 
     # Hover tooltips for lines and dots
     run_artists = (
@@ -619,6 +629,33 @@ def plot_measured_vs_truth(
                 pass
 
         hover_check.on_clicked(on_hover_toggle)
+
+    # Global "All OFF" button to disable all plot toggles at once
+    try:
+        all_off_ax = fig.add_axes([0.86, 0.10, 0.12, 0.05])
+        all_off_btn = Button(all_off_ax, "All OFF")
+
+        def on_all_off(_event) -> None:
+            try:
+                for chk in list(check_groups):
+                    try:
+                        statuses = list(chk.get_status())
+                    except Exception:
+                        continue
+                    for i, st in enumerate(statuses):
+                        if st:
+                            try:
+                                chk.set_active(i)
+                            except Exception:
+                                pass
+                for a in axes.ravel():
+                    a.figure.canvas.draw_idle()
+            except Exception:
+                pass
+
+        all_off_btn.on_clicked(on_all_off)
+    except Exception:
+        pass
 
     fig.suptitle("Measured vs Truth: Mounted (blue) vs Reseated (red)")
     plt.show()

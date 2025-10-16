@@ -9,7 +9,7 @@ from scipy.signal import butter, filtfilt
 import matplotlib.pyplot as plt
 import seaborn as sns
 import mplcursors
-from matplotlib.widgets import CheckButtons
+from matplotlib.widgets import CheckButtons, Button
 from pathlib import Path
 
 
@@ -19,6 +19,9 @@ class Paths:
     _project_root: Path = Path(__file__).resolve().parent.parent
     mounted_glob: str = str(_project_root / "Load_Cell_Spiral_test" / "H6b.90" / "10.08.2025" / "mounted_runs" / "*.csv")
     reseated_glob: str = str(_project_root / "Load_Cell_Spiral_test" / "H6b.90" / "10.08.2025" / "stationary_runs" / "*.csv")
+    # Metrics output paths
+    metrics_root: Path = _project_root / "outputs" / "metrics"
+    metrics_overlay_dir: Path = metrics_root / "overlay_mounted_vs_reseated"
 
 
 @dataclass
@@ -401,6 +404,154 @@ def compute_group_stats_aligned(
     return stats, grid_x
 
 
+def _ensure_dir(path: Path) -> None:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+
+
+def _compute_stats_for_sets(
+    mounted: List[pd.DataFrame],
+    reseated: List[pd.DataFrame],
+    params: Params,
+) -> Tuple[Dict[str, pd.DataFrame], Dict[str, pd.DataFrame], Optional[Dict[str, pd.DataFrame]], Optional[Dict[str, pd.DataFrame]]]:
+    """Compute stats dicts for mounted/reseated (sum/inner/outer) and optional truth.
+
+    Returns (m_stats, r_stats, t_m_stats, t_r_stats).
+    """
+    all_cols = [
+        "x", "y", "z", "mag",
+        "x_inner", "y_inner", "z_inner", "mag_inner",
+        "x_outer", "y_outer", "z_outer", "mag_outer",
+    ]
+
+    use_aligned = (
+        params.alignment_method in ("peak", "local_peak")
+        and mounted
+        and reseated
+        and all(("frame_aligned" in df.columns) for df in mounted)
+        and all(("frame_aligned" in df.columns) for df in reseated)
+    )
+
+    if use_aligned:
+        m_stats, _ = compute_group_stats_aligned(mounted, all_cols, x_col="frame_aligned")
+        r_stats, _ = compute_group_stats_aligned(reseated, all_cols, x_col="frame_aligned")
+    else:
+        m_stats = compute_group_stats(mounted, all_cols)
+        r_stats = compute_group_stats(reseated, all_cols)
+
+    # Truth group stats if available (compute per set)
+    truth_available_m = bool(mounted) and all(c in mounted[0].columns for c in ("bx", "by", "bz"))
+    truth_available_r = bool(reseated) and all(c in reseated[0].columns for c in ("bx", "by", "bz"))
+    t_m_stats: Optional[Dict[str, pd.DataFrame]] = None
+    t_r_stats: Optional[Dict[str, pd.DataFrame]] = None
+    if truth_available_m or truth_available_r:
+        t_cols_map = {"x": "bx", "y": "by", "z": "bz", "mag": "bmag"}
+        truth_for_stats_m: List[pd.DataFrame] = []
+        truth_for_stats_r: List[pd.DataFrame] = []
+        if truth_available_m:
+            for df in mounted:
+                if all(v in df.columns for v in t_cols_map.values()):
+                    tdf = pd.DataFrame({k: df[v] for k, v in t_cols_map.items()})
+                    if use_aligned and ("frame_aligned" in df.columns):
+                        tdf["frame_aligned"] = df["frame_aligned"].to_numpy()
+                    truth_for_stats_m.append(tdf)
+        if truth_available_r:
+            for df in reseated:
+                if all(v in df.columns for v in t_cols_map.values()):
+                    tdf = pd.DataFrame({k: df[v] for k, v in t_cols_map.items()})
+                    if use_aligned and ("frame_aligned" in df.columns):
+                        tdf["frame_aligned"] = df["frame_aligned"].to_numpy()
+                    truth_for_stats_r.append(tdf)
+
+        if truth_for_stats_m:
+            if use_aligned:
+                for i in range(len(truth_for_stats_m)):
+                    if "frame_aligned" not in truth_for_stats_m[i].columns:
+                        truth_for_stats_m[i]["frame_aligned"] = np.arange(len(truth_for_stats_m[i]))
+                t_m_stats, _ = compute_group_stats_aligned(truth_for_stats_m, ["x", "y", "z", "mag"], x_col="frame_aligned")
+            else:
+                t_m_stats = compute_group_stats(truth_for_stats_m, ["x", "y", "z", "mag"])
+        if truth_for_stats_r:
+            if use_aligned:
+                for i in range(len(truth_for_stats_r)):
+                    if "frame_aligned" not in truth_for_stats_r[i].columns:
+                        truth_for_stats_r[i]["frame_aligned"] = np.arange(len(truth_for_stats_r[i]))
+                t_r_stats, _ = compute_group_stats_aligned(truth_for_stats_r, ["x", "y", "z", "mag"], x_col="frame_aligned")
+            else:
+                t_r_stats = compute_group_stats(truth_for_stats_r, ["x", "y", "z", "mag"])
+
+    return m_stats, r_stats, t_m_stats, t_r_stats
+
+
+def write_average_sd_metrics(
+    mounted: List[pd.DataFrame],
+    reseated: List[pd.DataFrame],
+    paths: Paths,
+    params: Params,
+) -> Optional[Path]:
+    """Compute average SDs for sum/inner/outer and truth per set, and write CSV.
+
+    Returns written file path, or None if nothing written.
+    """
+    if not mounted or not reseated:
+        return None
+
+    m_stats, r_stats, t_m_stats, t_r_stats = _compute_stats_for_sets(mounted, reseated, params)
+
+    def avg_sd_from_stats(stats: Dict[str, pd.DataFrame], base: str) -> Dict[str, float]:
+        out: Dict[str, float] = {"avg_sd_x": np.nan, "avg_sd_y": np.nan, "avg_sd_z": np.nan, "avg_sd_mag": np.nan}
+        cols_map = {"avg_sd_x": f"x{base}", "avg_sd_y": f"y{base}", "avg_sd_z": f"z{base}", "avg_sd_mag": f"mag{base}"}
+        for k, col in cols_map.items():
+            if col in stats:
+                try:
+                    out[k] = float(np.nanmean(stats[col]["std"].to_numpy()))
+                except Exception:
+                    out[k] = float(np.nan)
+        return out
+
+    rows: List[Dict[str, object]] = []
+
+    # Sum
+    m_sum = avg_sd_from_stats(m_stats, base="")
+    r_sum = avg_sd_from_stats(r_stats, base="")
+    rows.append({"category": "mounted_sum", **m_sum})
+    rows.append({"category": "reseated_sum", **r_sum})
+
+    # Inner (if present)
+    has_inner = all(c in m_stats for c in ("x_inner", "y_inner", "z_inner", "mag_inner")) or all(c in r_stats for c in ("x_inner", "y_inner", "z_inner", "mag_inner"))
+    if has_inner:
+        m_inner = avg_sd_from_stats(m_stats, base="_inner")
+        r_inner = avg_sd_from_stats(r_stats, base="_inner")
+        rows.append({"category": "mounted_inner", **m_inner})
+        rows.append({"category": "reseated_inner", **r_inner})
+
+    # Outer (if present)
+    has_outer = all(c in m_stats for c in ("x_outer", "y_outer", "z_outer", "mag_outer")) or all(c in r_stats for c in ("x_outer", "y_outer", "z_outer", "mag_outer"))
+    if has_outer:
+        m_outer = avg_sd_from_stats(m_stats, base="_outer")
+        r_outer = avg_sd_from_stats(r_stats, base="_outer")
+        rows.append({"category": "mounted_outer", **m_outer})
+        rows.append({"category": "reseated_outer", **r_outer})
+
+    # Truth (if available)
+    if t_m_stats is not None:
+        m_truth = avg_sd_from_stats(t_m_stats, base="")
+        rows.append({"category": "mounted_truth", **m_truth})
+    if t_r_stats is not None:
+        r_truth = avg_sd_from_stats(t_r_stats, base="")
+        rows.append({"category": "reseated_truth", **r_truth})
+
+    if not rows:
+        return None
+
+    _ensure_dir(paths.metrics_overlay_dir)
+    out_path = paths.metrics_overlay_dir / "average_sd.csv"
+    pd.DataFrame(rows).to_csv(out_path, index=False)
+    return out_path
+
+
 def _ensure_frame_aligned_column(dfs: List[pd.DataFrame]) -> None:
     """Ensure each DataFrame has a 'frame_aligned' integer axis."""
     for df in dfs:
@@ -471,6 +622,8 @@ def plot_overlaid(
     cols = ["x", "y", "z", "mag"]
     fig, axes = plt.subplots(2, 2, figsize=(16, 9))
     axes_map = {"x": (0, 0), "y": (0, 1), "z": (1, 0), "mag": (1, 1)}
+    # Collect references to all CheckButtons groups so global buttons can control them
+    check_groups: list = []
 
     # Collect artists for interactive toggling
     mounted_lines: list = []  # sum variant runs
@@ -789,6 +942,10 @@ def plot_overlaid(
                 a.figure.canvas.draw_idle()
 
         t_check.on_clicked(on_toggle_t)
+        try:
+            check_groups.append(t_check)
+        except Exception:
+            pass
 
     # Mounted section (below hover)
     m_ax = fig.add_axes([0.86, 0.60, 0.12, 0.24])
@@ -843,6 +1000,10 @@ def plot_overlaid(
                 a.figure.canvas.draw_idle()
 
         m_check.on_clicked(on_toggle_m)
+        try:
+            check_groups.append(m_check)
+        except Exception:
+            pass
 
     # Reseated section (between mounted and truth)
     r_ax = fig.add_axes([0.86, 0.33, 0.12, 0.24])
@@ -897,6 +1058,10 @@ def plot_overlaid(
                 a.figure.canvas.draw_idle()
 
         r_check.on_clicked(on_toggle_r)
+        try:
+            check_groups.append(r_check)
+        except Exception:
+            pass
 
     # Hover tooltips showing source filename for single-run lines
     run_lines = mounted_lines + reseated_lines + inner_mounted_lines + inner_reseated_lines + outer_mounted_lines + outer_reseated_lines + truth_mounted_lines + truth_reseated_lines
@@ -946,6 +1111,33 @@ def plot_overlaid(
 
         hover_check.on_clicked(on_hover_toggle)
 
+    # Global "All OFF" button to disable all plot toggles at once
+    try:
+        all_off_ax = fig.add_axes([0.86, 0.02, 0.12, 0.04])
+        all_off_btn = Button(all_off_ax, "All OFF")
+
+        def on_all_off(_event) -> None:
+            try:
+                for chk in list(check_groups):
+                    try:
+                        statuses = list(chk.get_status())
+                    except Exception:
+                        continue
+                    for i, st in enumerate(statuses):
+                        if st:
+                            try:
+                                chk.set_active(i)
+                            except Exception:
+                                pass
+                for a in axes.ravel():
+                    a.figure.canvas.draw_idle()
+            except Exception:
+                pass
+
+        all_off_btn.on_clicked(on_all_off)
+    except Exception:
+        pass
+
     fig.suptitle("Load Cell Sensitivity: Mounted (blue) vs Reseated (red) vs Truth (black/gray)")
     # Show interactively instead of saving for now
     plt.show()
@@ -986,6 +1178,16 @@ def main() -> None:
 
     # Inter-set alignment by first local 'x' peak over threshold
     mounted_adj, reseated_adj = align_sets_by_first_x_peak(mounted_rot, reseated_rot, params)
+
+    # Write metrics CSV (average SDs)
+    try:
+        written = write_average_sd_metrics(mounted_adj, reseated_adj, paths, params)
+        if written is not None:
+            print(f"[metrics] Wrote average SD CSV: {written}")
+        else:
+            print("[metrics] Skipped writing average SD CSV (no data)")
+    except Exception as e:
+        print(f"[metrics] Failed to write average SD CSV: {e}")
 
     # Plot
     plot_overlaid(mounted_adj, reseated_adj, paths, params)
