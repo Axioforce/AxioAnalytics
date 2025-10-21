@@ -664,7 +664,7 @@ def plot_measured_vs_truth(
     except Exception:
         pass
 
-    fig.suptitle("Measured vs Truth: Mounted (blue) vs Reseated (red)")
+    fig.suptitle("Axioforce Load Cell Raw Data vs Reference Load Cell", fontsize=20, y=0.95)
     plt.show()
 
 
