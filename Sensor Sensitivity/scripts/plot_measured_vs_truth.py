@@ -36,6 +36,18 @@ def _pair_for_axis(axis: str) -> Tuple[str, str]:
         return "mag", "bmag"
     return axis, axis
 
+def _pair_for_axis_labels(axis: str) -> Tuple[str, str]:
+    # measured, truth
+    if axis == "x":
+        return "$F_x$ [N]", r"$B_x\ [\mu\mathrm{T}]$"
+    if axis == "y":
+        return "$F_y$ [N]", r"$B_y\ [\mu\mathrm{T}]$"
+    if axis == "z":
+        return "$F_z$ [N]", r"$B_z\ [\mu\mathrm{T}]$"
+    if axis == "mag":
+        return "$|F|$ [N]", r"$|B|\ [\mu\mathrm{T}]$"
+    return axis, axis
+
 
 def plot_measured_vs_truth(
     mounted: List[pd.DataFrame],
@@ -79,11 +91,13 @@ def plot_measured_vs_truth(
 
     for col in cols:
         meas_col, truth_col = _pair_for_axis(col)
+        meas_label, truth_label = _pair_for_axis_labels(col)
         r, c = axes_map[col]
         ax = axes[r][c]
-        ax.set_title(f"{meas_col.upper()} vs {truth_col.upper()}")
-        ax.set_xlabel(truth_col.upper())
-        ax.set_ylabel(meas_col.upper())
+        # ax.set_title(f"{meas_col.upper()} vs {truth_col.upper()}")
+        ax.set_xlabel(meas_label, fontsize=18)
+        ax.set_ylabel(truth_label, fontsize=18)
+        ax.tick_params(axis='both', which='major', labelsize=12)
 
         # Track per-axis ranges separately for better fit
         tx_min = None  # truth x-axis min
@@ -111,11 +125,7 @@ def plot_measured_vs_truth(
                 continue
             x_truth = df[truth_col].to_numpy()
             y_meas = df[meas_col].to_numpy()
-            # Sort by bmag if present, else by truth
-            if "bmag" in df.columns:
-                sort_idx = np.argsort(df["bmag"].to_numpy())
-            else:
-                sort_idx = np.argsort(x_truth)
+            sort_idx = np.argsort(x_truth)
             n = min(len(x_truth), len(y_meas))
             if n <= 0:
                 continue
@@ -157,7 +167,7 @@ def plot_measured_vs_truth(
                 continue
             x_truth = df[truth_col].to_numpy()
             y_meas = df[meas_col_inner].to_numpy()
-            sort_idx = np.argsort(df["bmag"].to_numpy()) if "bmag" in df.columns else np.argsort(x_truth)
+            sort_idx = np.argsort(x_truth)
             n = min(len(x_truth), len(y_meas))
             if n <= 0:
                 continue
@@ -189,7 +199,7 @@ def plot_measured_vs_truth(
                 continue
             x_truth = df[truth_col].to_numpy()
             y_meas = df[meas_col_outer].to_numpy()
-            sort_idx = np.argsort(df["bmag"].to_numpy()) if "bmag" in df.columns else np.argsort(x_truth)
+            sort_idx = np.argsort(x_truth)
             n = min(len(x_truth), len(y_meas))
             if n <= 0:
                 continue
@@ -220,10 +230,7 @@ def plot_measured_vs_truth(
                 continue
             x_truth = df[truth_col].to_numpy()
             y_meas = df[meas_col].to_numpy()
-            if "bmag" in df.columns:
-                sort_idx = np.argsort(df["bmag"].to_numpy())
-            else:
-                sort_idx = np.argsort(x_truth)
+            sort_idx = np.argsort(x_truth)
             n = min(len(x_truth), len(y_meas))
             if n <= 0:
                 continue
@@ -263,7 +270,7 @@ def plot_measured_vs_truth(
                 continue
             x_truth = df[truth_col].to_numpy()
             y_meas = df[meas_col_inner].to_numpy()
-            sort_idx = np.argsort(df["bmag"].to_numpy()) if "bmag" in df.columns else np.argsort(x_truth)
+            sort_idx = np.argsort(x_truth)
             n = min(len(x_truth), len(y_meas))
             if n <= 0:
                 continue
@@ -294,7 +301,7 @@ def plot_measured_vs_truth(
                 continue
             x_truth = df[truth_col].to_numpy()
             y_meas = df[meas_col_outer].to_numpy()
-            sort_idx = np.argsort(df["bmag"].to_numpy()) if "bmag" in df.columns else np.argsort(x_truth)
+            sort_idx = np.argsort(x_truth)
             n = min(len(x_truth), len(y_meas))
             if n <= 0:
                 continue
