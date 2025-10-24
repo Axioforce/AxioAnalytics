@@ -285,7 +285,7 @@ def _attach_add_runs_to_project_button(
         pass
 
 
-def _load_and_process_cell(cell_dir: Path, params: Params) -> List[pd.DataFrame]:
+def _load_and_process_cell(cell_dir: Path, params: Params, use_abs_sum: bool = False) -> List[pd.DataFrame]:
     try:
         dfs = load_group(str(cell_dir / "*.csv"), params.axis_mapping)
     except Exception:
@@ -302,12 +302,26 @@ def _load_and_process_cell(cell_dir: Path, params: Params) -> List[pd.DataFrame]
             dfs_aligned = [align_run(df, params) for df in dfs_prep]
         dfs_rot = rotate_group_about_z(dfs_aligned, params.rotation_deg_z)
         dfs_trim = _trim_by_truth_z_slope(dfs_rot)
+        # Optionally compute "sum" as |inner| + |outer| per axis by overwriting base columns
+        if use_abs_sum:
+            try:
+                for d in dfs_trim:
+                    for base in ("x", "y", "z", "mag"):
+                        inner_col = f"{base}_inner"
+                        outer_col = f"{base}_outer"
+                        if inner_col in d.columns and outer_col in d.columns:
+                            try:
+                                d[base] = d[inner_col].abs().astype(float) + d[outer_col].abs().astype(float)
+                            except Exception:
+                                pass
+            except Exception:
+                pass
         return dfs_trim
     except Exception:
         return []
 
 
-def _compute_overall_cellwise_from_disk(params: Params, n_bins: int = 60) -> Dict[str, Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]]:
+def _compute_overall_cellwise_from_disk(params: Params, n_bins: int = 60, use_abs_sum: bool = False) -> Dict[str, Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]]:
     """Compute overall lines per axis and variant by averaging per-cell means.
 
     Returns mapping: axis -> variant -> (centers, mean_across_cells, std_across_cells)
@@ -323,7 +337,7 @@ def _compute_overall_cellwise_from_disk(params: Params, n_bins: int = 60) -> Dic
     # Preload processed runs per cell (once)
     cell_to_runs: Dict[str, List[pd.DataFrame]] = {}
     for name in cells.keys():
-        runs = _load_and_process_cell(root / name, params)
+        runs = _load_and_process_cell(root / name, params, use_abs_sum=use_abs_sum)
         if runs:
             cell_to_runs[name] = runs
 
@@ -769,6 +783,7 @@ def _attach_add_cells_to_plot_button(
     palette,
     max_bins: int,
     rebuild_toggles,
+    use_abs_sum: bool,
 ) -> None:
     """Attach "Add Load Cell to Plot" toolbar action to select one/many folders
     from Load_Cell_Runs and add their lines to the plot with toggles and remove 'x'.
@@ -803,7 +818,7 @@ def _attach_add_cells_to_plot_button(
                 for name in selected:
                     if name in per_cell_runs:
                         continue
-                    runs = _load_and_process_cell(root / name, params)
+                    runs = _load_and_process_cell(root / name, params, use_abs_sum=use_abs_sum)
                     if runs:
                         per_cell_runs[name] = runs
 
@@ -865,6 +880,7 @@ def plot_load_cells_measured_vs_truth(
     title_suffix: str = "",
     save_path: Optional[Path] = None,
     show: bool = True,
+    use_abs_sum: bool = False,
 ) -> None:
     sns.set_style("whitegrid")
     cols = ["x", "y", "z", "mag"]
@@ -885,7 +901,7 @@ def plot_load_cells_measured_vs_truth(
     group_to_labels: Dict[str, List[str]] = {}
 
     # Precompute OVERALL lines from disk using cell-wise averaging
-    overall_data = _compute_overall_cellwise_from_disk(params, n_bins=max_bins)
+    overall_data = _compute_overall_cellwise_from_disk(params, n_bins=max_bins, use_abs_sum=use_abs_sum)
 
     for col in cols:
         meas_col, truth_col = _pair_for_axis(col)
@@ -957,6 +973,16 @@ def plot_load_cells_measured_vs_truth(
     live_widgets: List = []  # Track CheckButtons and Buttons to disconnect events before removal
     live_cursors: List = []  # Track mplcursors.Cursor instances to enable/disable hover labels
     hover_enabled: List[bool] = [False]  # mutable flag so closures can see updates
+    # Sample legend lines drawn inside the toggle panel (not part of main plot); refreshed on rebuild
+    sample_lines_map: Dict[Tuple[str, str], Line2D] = {}
+
+    # Pagination state for the right-hand toggle panel (no scrolling)
+    pagination = {
+        "enabled": False,
+        "page": 0,
+        "page_size": 4,   # groups per page (including 'overall')
+        "total_pages": 1,
+    }
 
     def rebuild_toggles() -> None:
         # 1) Disconnect events from any existing widgets to avoid callbacks after axes removal
@@ -975,6 +1001,8 @@ def plot_load_cells_measured_vs_truth(
             except Exception:
                 pass
         toggle_axes.clear()
+        # Clear sample legend lines registry; they will be recreated on rebuild
+        sample_lines_map.clear()
 
         if not group_to_labels:
             return
@@ -989,8 +1017,29 @@ def plot_load_cells_measured_vs_truth(
         if "overall" in group_to_labels:
             groups_in_order.append("overall")
 
-        total_items = sum(len(group_to_labels[g]) for g in groups_in_order)
         num_groups = len(groups_in_order)
+        page_size = int(pagination.get("page_size", 4)) or 4
+        pagination["enabled"] = bool(num_groups > page_size)
+        if not pagination["enabled"]:
+            pagination["page"] = 0
+        total_pages = max(1, (num_groups + page_size - 1) // page_size)
+        pagination["total_pages"] = total_pages
+        cur_page = int(pagination.get("page", 0))
+        if cur_page < 0:
+            cur_page = 0
+        if cur_page > total_pages - 1:
+            cur_page = total_pages - 1
+        pagination["page"] = cur_page
+
+        # Slice visible groups for current page
+        if pagination["enabled"]:
+            start_idx = cur_page * page_size
+            end_idx = min(num_groups, start_idx + page_size)
+            visible_groups = groups_in_order[start_idx:end_idx]
+        else:
+            visible_groups = groups_in_order
+
+        total_items = sum(len(group_to_labels[g]) for g in visible_groups)
         x0 = 0.86
         width = 0.12
         y_top = 0.92
@@ -998,29 +1047,37 @@ def plot_load_cells_measured_vs_truth(
         available = max(0.0, y_top - y_bottom)
         title_h = 0.02
         gap_h = 0.02
-        denom = max(1, total_items)
-        item_h = (available - num_groups * (title_h + gap_h)) / denom if available > 0 else 0.05
-        item_h = min(0.07, max(0.025, item_h))
+
+        # Preferred item height; allow a little squish but only down to a floor
+        base_item_h = 0.055
+        min_item_h = 0.035
+        content_h_base = len(visible_groups) * (title_h + gap_h) + total_items * base_item_h
+
+        item_h = base_item_h if content_h_base <= available else min(base_item_h, max(min_item_h, (available - len(visible_groups) * (title_h + gap_h)) / max(1, total_items)))
 
         chks: List[CheckButtons] = []
         style_map = {"sum": "-", "inner": "--", "outer": ":"}
+        # Start cursor at top (no scrolling)
         y_cursor = y_top
 
-        for group_name in groups_in_order:
+        for group_name in visible_groups:
             labels = group_to_labels.get(group_name, [])
             n_items = len(labels)
             if n_items == 0:
                 continue
-            # Title
+            # Title (skip if outside viewport to reduce clutter)
             try:
                 title_offset = 0.008
-                title_ax = fig.add_axes([x0, y_cursor - title_offset, width - 0.03, 0.02])
-                title_ax.axis('off')
-                title_ax.text(0, 0, group_name, fontsize=10, fontweight="bold", ha="left", va="bottom")
-                toggle_axes.append(title_ax)
-                # Remove 'x' button for non-overall groups
-                if group_name != "overall":
-                    rm_ax = fig.add_axes([x0 + width - 0.028, y_cursor - title_offset, 0.024, 0.02])
+                title_y = y_cursor - title_offset
+                title_visible = (title_y <= (y_top + 0.01)) and (title_y >= (y_bottom - 0.03))
+                if title_visible:
+                    title_ax = fig.add_axes([x0, title_y, width - 0.03, 0.02])
+                    title_ax.axis('off')
+                    title_ax.text(0, 0, group_name, fontsize=10, fontweight="bold", ha="left", va="bottom")
+                    toggle_axes.append(title_ax)
+                # Remove 'x' button for non-overall groups (only if visible)
+                if group_name != "overall" and title_visible:
+                    rm_ax = fig.add_axes([x0 + width - 0.028, title_y, 0.024, 0.02])
                     rm_btn = Button(rm_ax, "x")
 
                     def make_on_remove(gn: str):
@@ -1056,7 +1113,7 @@ def plot_load_cells_measured_vs_truth(
             except Exception:
                 pass
 
-            # Toggle box
+            # Toggle box (always visible within current page)
             height = n_items * item_h
             y0 = y_cursor - title_h - height
             togg_ax = fig.add_axes([x0, y0, width, height])
@@ -1087,7 +1144,8 @@ def plot_load_cells_measured_vs_truth(
                     line.set_clip_on(False)
                     line.set_visible(grouped_active.get((group_name, v), True))
                     togg_ax.add_line(line)
-                    grouped_artists.setdefault((group_name, v), []).append(line)
+                    # Track sample legend line separately to avoid bloating grouped_artists
+                    sample_lines_map[(group_name, v)] = line
             except Exception:
                 pass
 
@@ -1104,6 +1162,13 @@ def plot_load_cells_measured_vs_truth(
                             a.set_visible(visible)
                         except Exception:
                             pass
+                    # Also update the sample legend line, if present
+                    try:
+                        sl = sample_lines_map.get((gn, label))
+                        if sl is not None:
+                            sl.set_visible(visible)
+                    except Exception:
+                        pass
                     try:
                         fig.canvas.draw_idle()
                     except Exception:
@@ -1115,25 +1180,39 @@ def plot_load_cells_measured_vs_truth(
 
         # Global OFF
         try:
-            all_off_ax = fig.add_axes([x0, max(y_bottom - 0.02, 0.02), width, 0.06])
+            # Compact 'All OFF' button near the bottom
+            btn_w = min(width, 0.10)
+            btn_h = 0.03
+            y_all_off = 0.075
+            x_all_off = x0 + max(0.0, (width - btn_w) * 0.5)
+            all_off_ax = fig.add_axes([x_all_off, y_all_off, btn_w, btn_h])
             all_off_btn = Button(all_off_ax, "All OFF")
             toggle_axes.append(all_off_ax)
             live_widgets.append(all_off_btn)
 
             def on_all_off(_event) -> None:
-                for chk in chks:
-                    try:
-                        statuses = list(chk.get_status())
-                    except Exception:
-                        continue
-                    for i, st in enumerate(statuses):
-                        if st:
+                try:
+                    # Update visibility state and artists for ALL groups/variants
+                    for gn, lbls in list(group_to_labels.items()):
+                        for v in list(lbls):
+                            grouped_active[(gn, v)] = False
+                            for a in grouped_artists.get((gn, v), []):
+                                try:
+                                    a.set_visible(False)
+                                except Exception:
+                                    pass
                             try:
-                                chk.set_active(i)
+                                sl = sample_lines_map.get((gn, v))
+                                if sl is not None:
+                                    sl.set_visible(False)
                             except Exception:
                                 pass
-                try:
-                    fig.canvas.draw_idle()
+                    # Rebuild toggles so all pages reflect OFF state
+                    rebuild_toggles()
+                    try:
+                        fig.canvas.draw_idle()
+                    except Exception:
+                        pass
                 except Exception:
                     pass
 
@@ -1141,13 +1220,77 @@ def plot_load_cells_measured_vs_truth(
         except Exception:
             pass
 
+        # Pagination controls (Prev/Next) with page indicator (compact along bottom)
+        try:
+            if pagination.get("enabled", False):
+                y_btn = 0.03
+                btn_h = 0.03
+                prev_w = 0.04
+                next_w = 0.04
+                prev_ax = fig.add_axes([x0, y_btn, prev_w, btn_h])
+                next_ax = fig.add_axes([x0 + width - next_w, y_btn, next_w, btn_h])
+                prev_btn = Button(prev_ax, "Prev")
+                next_btn = Button(next_ax, "Next")
+                toggle_axes.extend([prev_ax, next_ax])
+                live_widgets.extend([prev_btn, next_btn])
+
+                mid_h = 0.015
+                mid_y = y_btn + max(0.0, (btn_h - mid_h) * 0.5)
+                mid_x = x0 + prev_w + 0.004
+                mid_w = max(0.0, width - (prev_w + next_w + 0.008))
+                mid_ax = fig.add_axes([mid_x, mid_y, mid_w, mid_h])
+                mid_ax.axis('off')
+                try:
+                    mid_ax.text(0.5, 0.0, f"Page {pagination['page'] + 1}/{pagination['total_pages']}", fontsize=8, ha="center", va="bottom")
+                except Exception:
+                    pass
+                toggle_axes.append(mid_ax)
+
+                def _on_prev(_event) -> None:
+                    try:
+                        p = int(pagination.get("page", 0))
+                        if p > 0:
+                            pagination["page"] = p - 1
+                        else:
+                            pagination["page"] = 0
+                        rebuild_toggles()
+                        try:
+                            fig.canvas.draw_idle()
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+
+                def _on_next(_event) -> None:
+                    try:
+                        p = int(pagination.get("page", 0))
+                        tp = int(pagination.get("total_pages", 1))
+                        if p < tp - 1:
+                            pagination["page"] = p + 1
+                        else:
+                            pagination["page"] = tp - 1
+                        rebuild_toggles()
+                        try:
+                            fig.canvas.draw_idle()
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+
+                prev_btn.on_clicked(_on_prev)
+                next_btn.on_clicked(_on_next)
+        except Exception:
+            pass
+
     # Initial build of toggles
     rebuild_toggles()
+
+    # Scrolling removed; pagination controls replace scroll interaction
 
     # Function to recompute overall from disk and refresh only overall artists
     def recompute_overall_and_refresh() -> None:
         try:
-            new_overall = _compute_overall_cellwise_from_disk(params, n_bins=max_bins)
+            new_overall = _compute_overall_cellwise_from_disk(params, n_bins=max_bins, use_abs_sum=use_abs_sum)
             main_axes = [ax for ax in getattr(axes, "ravel", lambda: [])()] if hasattr(axes, "ravel") else list(axes)
             # 1) Remove all previous overall artists from the main axes ONCE, keep toggle sample lines
             for variant in ("sum", "inner", "outer"):
@@ -1213,6 +1356,7 @@ def plot_load_cells_measured_vs_truth(
         palette=palette,
         max_bins=max_bins,
         rebuild_toggles=rebuild_toggles,
+        use_abs_sum=use_abs_sum,
     )
 
     # Toolbar toggle for hover labels (load cell names). Applies to visible cell lines only.
@@ -1372,6 +1516,7 @@ def main() -> None:
     parser.add_argument("--bins", type=int, default=60, help="Number of bins for truth-axis binning")
     parser.add_argument("--save", action="store_true", help="Save figure to outputs/plots")
     parser.add_argument("--no-show", action="store_false", dest="show", default=True, help="Do not show figure interactively")
+    parser.add_argument("--abs-sum", action="store_true", dest="use_abs_sum", help="Compute 'sum' as |inner|+|outer| per axis instead of using 'sum' columns")
     args = parser.parse_args()
 
     root = Path(args.root)
@@ -1424,6 +1569,7 @@ def main() -> None:
         title_suffix=title_suffix,
         save_path=save_path,
         show=bool(args.show),
+        use_abs_sum=bool(getattr(args, "use_abs_sum", False)),
     )
 
 
