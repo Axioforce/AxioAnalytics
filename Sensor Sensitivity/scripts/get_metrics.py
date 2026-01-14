@@ -9,7 +9,7 @@ import pandas as pd
 from pathlib import Path
 
 # Reuse pipeline helpers from overlay module
-from overlay_mounted_vs_reseated import (
+from pipeline import (
     Params,
     load_group,
     preprocess_signal,
@@ -61,6 +61,34 @@ def _parse_date_from_filename(filename: str) -> Optional[str]:
     # fallback: look anywhere in the name for last date-like token
     matches = re.findall(r"\d{1,2}\.\d{1,2}\.\d{4}", name)
     return matches[-1] if matches else None
+
+
+def _derive_groups(cell_names: List[str]) -> Dict[str, List[str]]:
+    """Build analysis groups from cell name prefixes.
+
+    Groups:
+      - CH1-4: names starting with CH1, CH2, CH3, CH4
+      - CH5-8: names starting with CH5, CH6, CH7, CH8
+      - J:     names starting with J (e.g., J1, J2)
+    """
+    groups: Dict[str, List[str]] = {"CH1-4": [], "CH5-8": [], "J": []}
+    for name in cell_names:
+        nm = str(name)
+        nm_u = nm.upper()
+        if nm_u.startswith("CH1") or nm_u.startswith("CH2") or nm_u.startswith("CH3") or nm_u.startswith("CH4"):
+            groups["CH1-4"].append(name)
+        if nm_u.startswith("CH5") or nm_u.startswith("CH6") or nm_u.startswith("CH7") or nm_u.startswith("CH8"):
+            groups["CH5-8"].append(name)
+        if nm_u.startswith("J"):
+            groups["J"].append(name)
+    return groups
+
+
+def _is_ch_cell(name: str) -> bool:
+    try:
+        return str(name).upper().startswith("CH")
+    except Exception:
+        return False
 
 
 def _linear_slope(x: np.ndarray, y: np.ndarray) -> float:
@@ -361,6 +389,56 @@ def run_get_metrics(
     bz_comp_df.to_csv(bz_comp_csv, index=False)
     out_paths["bz_fleet_comparison"] = bz_comp_csv
 
+    # Group comparison for Bz min/max (exclude all CH cells from baseline and exclude group's own cells)
+    try:
+        cell_names_list = list(bz_per_cell["cell"].astype(str)) if not bz_per_cell.empty else []
+    except Exception:
+        cell_names_list = []
+    groups = _derive_groups(cell_names_list)
+    bz_group_rows: List[Dict[str, object]] = []
+    for gname, members in groups.items():
+        if not members:
+            continue
+        members_set = set(members)
+        try:
+            is_ch_mask = bz_per_cell["cell"].astype(str).apply(_is_ch_cell)
+        except Exception:
+            is_ch_mask = pd.Series([False] * len(bz_per_cell))
+        # Exclude all CH cells from baseline, and exclude group's own cells
+        base_df = bz_per_cell[(~is_ch_mask) & (~bz_per_cell["cell"].isin(members_set))]
+        grp_df = bz_per_cell[bz_per_cell["cell"].isin(members_set)]
+        if grp_df.empty or base_df.empty:
+            continue
+        # Summaries for group and baseline
+        def _mean_safe(s: pd.Series) -> float:
+            return float(s.mean()) if s.size else np.nan
+        grp_mean_min = _mean_safe(grp_df["mean_z_min"]) ; base_mean_min = _mean_safe(base_df["mean_z_min"]) ;
+        grp_mean_max = _mean_safe(grp_df["mean_z_max"]) ; base_mean_max = _mean_safe(base_df["mean_z_max"]) ;
+        grp_mean_rng = _mean_safe(grp_df["mean_z_range"]) ; base_mean_rng = _mean_safe(base_df["mean_z_range"]) ;
+        bz_group_rows.append({
+            "group": gname,
+            "members": ",".join(sorted(members)),
+            "group_mean_z_min": grp_mean_min,
+            "group_mean_z_max": grp_mean_max,
+            "group_mean_z_range": grp_mean_rng,
+            "baseline_mean_z_min": base_mean_min,
+            "baseline_mean_z_max": base_mean_max,
+            "baseline_mean_z_range": base_mean_rng,
+            "delta_z_min": grp_mean_min - base_mean_min,
+            "delta_z_max": grp_mean_max - base_mean_max,
+            "delta_z_range": grp_mean_rng - base_mean_rng,
+            "ratio_z_min": (grp_mean_min / base_mean_min) if np.isfinite(base_mean_min) and base_mean_min != 0 else np.nan,
+            "ratio_z_max": (grp_mean_max / base_mean_max) if np.isfinite(base_mean_max) and base_mean_max != 0 else np.nan,
+            "ratio_z_range": (grp_mean_rng / base_mean_rng) if np.isfinite(base_mean_rng) and base_mean_rng != 0 else np.nan,
+            "group_cells": len(members),
+            "baseline_cells": int(base_df.shape[0]),
+        })
+    if bz_group_rows:
+        bz_group_df = pd.DataFrame(bz_group_rows)
+        bz_group_csv = paths.metrics_bz_root / "group_comparison.csv"
+        bz_group_df.to_csv(bz_group_csv, index=False)
+        out_paths["bz_group_comparison"] = bz_group_csv
+
     # Single Cell, Within a Set (same day): aggregate per cell/date
     if not df_runs.empty:
         grp_cols = ["cell", "date"]
@@ -441,6 +519,49 @@ def run_get_metrics(
     comp_csv = paths.metrics_root / "fleet_comparison.csv"
     comp_df.to_csv(comp_csv, index=False)
     out_paths["fleet_comparison"] = comp_csv
+
+    # Group comparison for sensitivity (exclude all CH from baseline and exclude group's own cells)
+    sens_group_rows: List[Dict[str, object]] = []
+    cell_names_list = list(per_cell["cell"].astype(str)) if not per_cell.empty else []
+    groups = _derive_groups(cell_names_list)
+    for gname, members in groups.items():
+        if not members:
+            continue
+        members_set = set(members)
+        try:
+            is_ch_mask = per_cell["cell"].astype(str).apply(_is_ch_cell)
+        except Exception:
+            is_ch_mask = pd.Series([False] * len(per_cell))
+        base_df = per_cell[(~is_ch_mask) & (~per_cell["cell"].isin(members_set))]
+        grp_df = per_cell[per_cell["cell"].isin(members_set)]
+        if grp_df.empty or base_df.empty:
+            continue
+        def _mean_safe2(s: pd.Series) -> float:
+            return float(s.mean()) if s.size else np.nan
+        # Use x,y,z mean slopes and rmse as summary
+        fields = [
+            ("mean_slope_x", "slope_x"), ("mean_slope_y", "slope_y"), ("mean_slope_z", "slope_z"),
+            ("mean_rmse_x", "rmse_x"), ("mean_rmse_y", "rmse_y"), ("mean_rmse_z", "rmse_z"),
+        ]
+        row: Dict[str, object] = {
+            "group": gname,
+            "members": ",".join(sorted(members)),
+            "group_cells": int(grp_df.shape[0]),
+            "baseline_cells": int(base_df.shape[0]),
+        }
+        for col, short in fields:
+            gmean = _mean_safe2(grp_df[col])
+            bmean = _mean_safe2(base_df[col])
+            row[f"group_{short}"] = gmean
+            row[f"baseline_{short}"] = bmean
+            row[f"delta_{short}"] = gmean - bmean
+            row[f"ratio_{short}"] = (gmean / bmean) if np.isfinite(bmean) and bmean != 0 else np.nan
+        sens_group_rows.append(row)
+    if sens_group_rows:
+        sens_group_df = pd.DataFrame(sens_group_rows)
+        sens_group_csv = paths.metrics_root / "group_comparison.csv"
+        sens_group_df.to_csv(sens_group_csv, index=False)
+        out_paths["sens_group_comparison"] = sens_group_csv
 
     return out_paths
 

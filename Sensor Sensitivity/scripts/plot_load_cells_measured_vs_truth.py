@@ -38,7 +38,7 @@ except Exception:
     mplcursors = None
 
 # Reuse pipeline helpers and configuration from the overlay module
-from overlay_mounted_vs_reseated import (
+from pipeline import (
     Params,
     load_group,
     preprocess_signal,
@@ -68,15 +68,22 @@ def _pair_for_axis(axis: str) -> Tuple[str, str]:
 
 
 def _pair_for_axis_labels(axis: str) -> Tuple[str, str]:
-    """Return (measured_label, truth_label) with units and formatting, matching existing scripts."""
+    """Return (measured_label, truth_label) with units and formatting.
+
+    IMPORTANT (dataset convention):
+    - Measured columns come from the load-cell output channels (e.g. sum-x/y/z and mag) and are in µT.
+    - Truth columns come from the b* columns (bx/by/bz and bmag) and are in N (reference load cell).
+
+    Yes, the truth force columns are named b* historically; treat them as force in N here.
+    """
     if axis == "x":
-        return "$F_x$ [N]", r"$B_x\ [\mu\mathrm{T}]$"
+        return r"$B_x^{meas}\ [\mu\mathrm{T}]$", r"$F_x^{truth}\ [\mathrm{N}]$"
     if axis == "y":
-        return "$F_y$ [N]", r"$B_y\ [\mu\mathrm{T}]$"
+        return r"$B_y^{meas}\ [\mu\mathrm{T}]$", r"$F_y^{truth}\ [\mathrm{N}]$"
     if axis == "z":
-        return "$F_z$ [N]", r"$B_z\ [\mu\mathrm{T}]$"
+        return r"$B_z^{meas}\ [\mu\mathrm{T}]$", r"$F_z^{truth}\ [\mathrm{N}]$"
     if axis == "mag":
-        return "$|F|$ [N]", r"$|B|\ [\mu\mathrm{T}]$"
+        return r"$|B|^{meas}\ [\mu\mathrm{T}]$", r"$|F|^{truth}\ [\mathrm{N}]$"
     return axis, axis
 
 
@@ -93,31 +100,31 @@ def _variant_column(base: str, variant: str) -> str:
 
 def _compute_binned_mean_std(
     runs: List[pd.DataFrame],
-    meas_col: str,
-    truth_col: str,
+    x_col: str,
+    y_col: str,
     n_bins: int = 60,
 ) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
-    """Compute binned mean±std of measured vs truth across all runs.
+    """Compute binned mean±std of y(x) across all runs.
 
     Returns (centers, means, stds) or None if insufficient data.
     """
     try:
         xs: List[np.ndarray] = []
         ys: List[np.ndarray] = []
-        tx_min: Optional[float] = None
+        tx_min: Optional[float] = None  # x-axis range
         tx_max: Optional[float] = None
         for df in runs:
-            if meas_col not in df.columns or truth_col not in df.columns:
+            if x_col not in df.columns or y_col not in df.columns:
                 continue
-            x_truth = df[truth_col].to_numpy(dtype=float)
-            y_meas = df[meas_col].to_numpy(dtype=float)
-            n = min(x_truth.size, y_meas.size)
+            x = df[x_col].to_numpy(dtype=float)
+            y = df[y_col].to_numpy(dtype=float)
+            n = min(x.size, y.size)
             if n <= 0:
                 continue
-            xs.append(x_truth[:n])
-            ys.append(y_meas[:n])
-            cur_min = float(np.nanmin(x_truth[:n])) if n > 0 else None
-            cur_max = float(np.nanmax(x_truth[:n])) if n > 0 else None
+            xs.append(x[:n])
+            ys.append(y[:n])
+            cur_min = float(np.nanmin(x[:n])) if n > 0 else None
+            cur_max = float(np.nanmax(x[:n])) if n > 0 else None
             if cur_min is not None:
                 tx_min = cur_min if tx_min is None else min(tx_min, cur_min)
             if cur_max is not None:
@@ -302,11 +309,13 @@ def _load_and_process_cell(cell_dir: Path, params: Params, use_abs_sum: bool = F
             dfs_aligned = [align_run(df, params) for df in dfs_prep]
         dfs_rot = rotate_group_about_z(dfs_aligned, params.rotation_deg_z)
         dfs_trim = _trim_by_truth_z_slope(dfs_rot)
-        # Optionally compute "sum" as |inner| + |outer| per axis by overwriting base columns
+        # Optionally compute "sum" as |inner| + |outer| per axis by overwriting base axis columns.
+        # Note: we recompute 'mag' from the resulting (x,y,z) for consistency; we do NOT set
+        # mag := mag_inner + mag_outer (summing magnitudes is not the same as magnitude of sum).
         if use_abs_sum:
             try:
                 for d in dfs_trim:
-                    for base in ("x", "y", "z", "mag"):
+                    for base in ("x", "y", "z"):
                         inner_col = f"{base}_inner"
                         outer_col = f"{base}_outer"
                         if inner_col in d.columns and outer_col in d.columns:
@@ -314,6 +323,12 @@ def _load_and_process_cell(cell_dir: Path, params: Params, use_abs_sum: bool = F
                                 d[base] = d[inner_col].abs().astype(float) + d[outer_col].abs().astype(float)
                             except Exception:
                                 pass
+                    # Recompute magnitude after overwriting x/y/z (if present)
+                    try:
+                        if all(c in d.columns for c in ("x", "y", "z")):
+                            d["mag"] = np.sqrt(d["x"].astype(float) ** 2 + d["y"].astype(float) ** 2 + d["z"].astype(float) ** 2)
+                    except Exception:
+                        pass
             except Exception:
                 pass
         return dfs_trim
@@ -343,7 +358,7 @@ def _compute_overall_cellwise_from_disk(params: Params, n_bins: int = 60, use_ab
 
     for axis in axes_list:
         meas_col, truth_col = _pair_for_axis(axis)
-        # Determine global bin edges from all runs of all cells
+        # Determine global bin edges from TRUTH values (x-axis) across all runs/cells
         tx_min: Optional[float] = None
         tx_max: Optional[float] = None
         for runs in cell_to_runs.values():
@@ -378,6 +393,7 @@ def _compute_overall_cellwise_from_disk(params: Params, n_bins: int = 60, use_ab
                     all_y = []
                     for df in runs:
                         if truth_col in df.columns and v_col in df.columns:
+                            # X: truth force (N), Y: measured signal (µT)
                             x = df[truth_col].to_numpy(dtype=float)
                             y = df[v_col].to_numpy(dtype=float)
                             n = min(x.size, y.size)
@@ -407,6 +423,121 @@ def _compute_overall_cellwise_from_disk(params: Params, n_bins: int = 60, use_ab
             result[axis] = axis_results
 
     return result
+
+
+def _derive_groups(cell_names: List[str]) -> Dict[str, List[str]]:
+    groups: Dict[str, List[str]] = {"CH1-4": [], "CH5-8": [], "J": []}
+    for name in cell_names:
+        nm = str(name)
+        nm_u = nm.upper()
+        if nm_u.startswith("CH1") or nm_u.startswith("CH2") or nm_u.startswith("CH3") or nm_u.startswith("CH4"):
+            groups["CH1-4"].append(name)
+        if nm_u.startswith("CH5") or nm_u.startswith("CH6") or nm_u.startswith("CH7") or nm_u.startswith("CH8"):
+            groups["CH5-8"].append(name)
+        if nm_u.startswith("J"):
+            groups["J"].append(name)
+    return groups
+
+
+def _compute_group_overall_from_disk(
+    params: Params,
+    n_bins: int = 60,
+    use_abs_sum: bool = False,
+) -> Dict[str, Dict[str, Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]]]:
+    """Compute per-group overall lines per axis and variant.
+
+    Returns mapping: group_name -> axis -> variant -> (centers, mean, std)
+    """
+    root = LCPaths().default_root
+    cells = _scan_load_cells(root)
+    if not cells:
+        return {}
+
+    # Preload processed runs per cell (once)
+    cell_to_runs: Dict[str, List[pd.DataFrame]] = {}
+    for name in cells.keys():
+        runs = _load_and_process_cell(root / name, params, use_abs_sum=use_abs_sum)
+        if runs:
+            cell_to_runs[name] = runs
+
+    groups = _derive_groups(list(cell_to_runs.keys()))
+    axes_list = ["x", "y", "z", "mag"]
+    out: Dict[str, Dict[str, Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]]] = {}
+
+    for gname, members in groups.items():
+        if not members:
+            continue
+        # Determine global bin edges for this group from its member cells
+        group_runs = {k: v for k, v in cell_to_runs.items() if k in members}
+        if not group_runs:
+            continue
+        g_result: Dict[str, Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]] = {}
+        for axis in axes_list:
+            meas_col, truth_col = _pair_for_axis(axis)
+            # Determine global bin edges from TRUTH values (x-axis) across this group's cells
+            tx_min: Optional[float] = None
+            tx_max: Optional[float] = None
+            for runs in group_runs.values():
+                for df in runs:
+                    if truth_col not in df.columns:
+                        continue
+                    arr = df[truth_col].to_numpy(dtype=float)
+                    if arr.size == 0:
+                        continue
+                    cur_min = float(np.nanmin(arr))
+                    cur_max = float(np.nanmax(arr))
+                    tx_min = cur_min if tx_min is None else min(tx_min, cur_min)
+                    tx_max = cur_max if tx_max is None else max(tx_max, cur_max)
+            if tx_min is None or tx_max is None:
+                continue
+            if tx_min == tx_max:
+                tx_max = tx_min + 1.0
+            edges = np.linspace(tx_min, tx_max, int(n_bins) + 1)
+            centers = 0.5 * (edges[:-1] + edges[1:])
+
+            axis_results: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
+            for variant in ("sum", "inner", "outer"):
+                v_col = _variant_column(meas_col, variant)
+                per_cell_means: List[np.ndarray] = []
+                for runs in group_runs.values():
+                    if not runs or v_col not in runs[0].columns:
+                        continue
+                    try:
+                        all_x = []
+                        all_y = []
+                        for df in runs:
+                            if truth_col in df.columns and v_col in df.columns:
+                                # X: truth force (N), Y: measured signal (µT)
+                                x = df[truth_col].to_numpy(dtype=float)
+                                y = df[v_col].to_numpy(dtype=float)
+                                n = min(x.size, y.size)
+                                if n > 0:
+                                    all_x.append(x[:n])
+                                    all_y.append(y[:n])
+                        if not all_x:
+                            continue
+                        all_x_arr = np.concatenate(all_x).astype(float)
+                        all_y_arr = np.concatenate(all_y).astype(float)
+                        means = np.full_like(centers, np.nan, dtype=float)
+                        for i in range(centers.size):
+                            mask = (all_x_arr >= edges[i]) & (all_x_arr < edges[i + 1])
+                            vals = all_y_arr[mask]
+                            if vals.size:
+                                means[i] = float(np.nanmean(vals))
+                        per_cell_means.append(means)
+                    except Exception:
+                        continue
+                if not per_cell_means:
+                    continue
+                cell_matrix = np.vstack(per_cell_means)
+                mean_across = np.nanmean(cell_matrix, axis=0)
+                std_across = np.nanstd(cell_matrix, axis=0)
+                axis_results[variant] = (centers, mean_across, std_across)
+            if axis_results:
+                g_result[axis] = axis_results
+        if g_result:
+            out[gname] = g_result
+    return out
 
 
 def _device_master_list_path() -> Path:
@@ -842,7 +973,8 @@ def _attach_add_cells_to_plot_button(
                             v_col = _variant_column(meas_col, variant)
                             if v_col not in runs[0].columns:
                                 continue
-                            res = _compute_binned_mean_std(runs, v_col, truth_col, n_bins=max_bins)
+                            # X: truth force (N), Y: measured signal (µT)
+                            res = _compute_binned_mean_std(runs, truth_col, v_col, n_bins=max_bins)
                             if res is None:
                                 continue
                             centers, means, stds = res
@@ -903,14 +1035,22 @@ def plot_load_cells_measured_vs_truth(
     # Precompute OVERALL lines from disk using cell-wise averaging
     overall_data = _compute_overall_cellwise_from_disk(params, n_bins=max_bins, use_abs_sum=use_abs_sum)
 
+    # Optional per-group overall curves
+    group_overall: Dict[str, Dict[str, Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]]]] = {}
+    try:
+        group_overall = _compute_group_overall_from_disk(params, n_bins=max_bins, use_abs_sum=use_abs_sum) if getattr(params, "_add_groups", False) else {}
+    except Exception:
+        group_overall = {}
+
     for col in cols:
         meas_col, truth_col = _pair_for_axis(col)
         r, c = axes_map[col]
         ax = axes[r][c]
         meas_label, truth_label = _pair_for_axis_labels(col)
         # Match labeling style from plot_measured_vs_truth.py
-        ax.set_xlabel(meas_label, fontsize=18)
-        ax.set_ylabel(truth_label, fontsize=18)
+        # Calibration view: X = truth force (N), Y = measured load-cell signal (µT)
+        ax.set_xlabel(truth_label, fontsize=18)
+        ax.set_ylabel(meas_label, fontsize=18)
         ax.tick_params(axis='both', which='major', labelsize=12)
 
         # Per-load-cell mean±SD bands (only for currently selected cells)
@@ -925,7 +1065,8 @@ def plot_load_cells_measured_vs_truth(
                 if v_col not in runs[0].columns:
                     # Skip this variant if not present in data
                     continue
-                res = _compute_binned_mean_std(runs, v_col, truth_col, n_bins=max_bins)
+                # X: truth force (N), Y: measured signal (µT)
+                res = _compute_binned_mean_std(runs, truth_col, v_col, n_bins=max_bins)
                 if res is None:
                     continue
                 centers, means, stds = res
@@ -961,6 +1102,34 @@ def plot_load_cells_measured_vs_truth(
                 group_to_labels["overall"] = []
             if variant not in group_to_labels["overall"]:
                 group_to_labels["overall"].append(variant)
+
+        # Group-level overall mean±SD (CH1-4, CH5-8, J), styled like overall
+        if group_overall:
+            for gname in ("CH1-4", "CH5-8", "J"):
+                g_axes = group_overall.get(gname, {})
+                axis_data = g_axes.get(col, {})
+                if not axis_data:
+                    continue
+                color = {"CH1-4": "#aa3377", "CH5-8": "#33aa77", "J": "#7733aa"}.get(gname, "#555555")
+                for variant, linestyle, alpha in (("sum", "-", 0.20), ("inner", "--", 0.16), ("outer", ":", 0.14)):
+                    if variant not in axis_data:
+                        continue
+                    centers, means, stds = axis_data[variant]
+                    line, = ax.plot(centers, means, color=color, linewidth=2.3, linestyle=linestyle, label=f"{gname} {variant}")
+                    band = ax.fill_between(centers, means - stds, means + stds, color=color, alpha=alpha)
+                    key = (gname, variant)
+                    grouped_artists.setdefault(key, []).extend([line, band])
+                    default_visible = (variant == "sum")
+                    # Default: show only sum; inner/outer off by default
+                    grouped_active.setdefault(key, default_visible)
+                    try:
+                        line.set_visible(default_visible)
+                        band.set_visible(default_visible)
+                    except Exception:
+                        pass
+                    group_to_labels.setdefault(gname, [])
+                    if variant not in group_to_labels[gname]:
+                        group_to_labels[gname].append(variant)
 
         # Remove legend to avoid clutter; toggles on the right will serve as legend and controls
         # ax.legend(loc="best", fontsize=8)
@@ -1136,7 +1305,12 @@ def plot_load_cells_measured_vs_truth(
                     x_txt, y_txt = txt.get_position()
                     x1 = min(0.80, x_txt + 0.20)
                     x2 = min(0.98, x1 + 0.16)
-                    color = "#222222" if group_name == "overall" else cell_to_color.get(group_name, (0.2, 0.4, 0.8))
+                    # Match sample line color to plotted line color (overall, groups, or cells)
+                    if group_name == "overall":
+                        color = "#222222"
+                    else:
+                        group_color_map = {"CH1-4": "#aa3377", "CH5-8": "#33aa77", "J": "#7733aa"}
+                        color = group_color_map.get(group_name, cell_to_color.get(group_name, (0.2, 0.4, 0.8)))
                     linestyle = style_map.get(v, "-")
                     line = plt.Line2D([x1, x2], [y_txt, y_txt], color=color, linestyle=linestyle, linewidth=2.6, solid_capstyle="round")
                     line.set_transform(trans)
@@ -1517,7 +1691,18 @@ def main() -> None:
     parser.add_argument("--save", action="store_true", help="Save figure to outputs/plots")
     parser.add_argument("--no-show", action="store_false", dest="show", default=True, help="Do not show figure interactively")
     parser.add_argument("--abs-sum", action="store_true", dest="use_abs_sum", help="Compute 'sum' as |inner|+|outer| per axis instead of using 'sum' columns")
+    parser.add_argument("--add-groups", action="store_true", dest="add_groups", help="Add group-level overall lines (CH1-4, CH5-8, J) with mean±SD for sum/inner/outer")
     args = parser.parse_args()
+    try:
+        logger.info(
+            "Args: use_abs_sum=%s, add_groups=%s, root=%s, auto_source=%s",
+            bool(getattr(args, "use_abs_sum", False)),
+            bool(getattr(args, "add_groups", False)),
+            str(getattr(args, "root", "")),
+            str(getattr(args, "auto_source", "")),
+        )
+    except Exception:
+        pass
 
     root = Path(args.root)
     auto_src = Path(args.auto_source)
@@ -1549,6 +1734,11 @@ def main() -> None:
     except Exception:
         pass
     params = Params()  # reuse defaults (alignment, rotation, filtering options)
+    try:
+        # Stash flag to control group rendering upstream
+        params._add_groups = bool(getattr(args, "add_groups", False))
+    except Exception:
+        pass
 
     # Start with no selected load cells; user adds via toolbar
     per_cell_runs: Dict[str, List[pd.DataFrame]] = {}
@@ -1571,6 +1761,16 @@ def main() -> None:
         show=bool(args.show),
         use_abs_sum=bool(getattr(args, "use_abs_sum", False)),
     )
+    # If --no-show and no --save, there is intentionally no visible output. Make that explicit.
+    try:
+        if (not bool(args.show)) and (not bool(args.save)):
+            logger.info("Completed (no output generated because --no-show and no --save).")
+        elif bool(args.save) and save_path is not None:
+            logger.info("Completed (saved plot): %s", str(save_path))
+        else:
+            logger.info("Completed.")
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":
